@@ -1,5 +1,5 @@
-// use ndarray;
-use numpy::{IntoPyArray, PyArray2, PyArrayDyn};
+use numpy::{PyArray, PyArray1, PyArray2, PyArrayDyn};
+use ndarray::Dim;
 use pyo3::prelude::{pymodule, PyModule, PyResult, Python};
 
 // NOTE
@@ -34,7 +34,7 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
         let vector_rdf = rust_fn::compute_vector_rdf2d(&array, box_size, binsize, periodic);
         let array_rdf =  PyArray2::from_vec2(py, &vector_rdf).unwrap();
         
-        return(array_rdf)
+        return array_rdf
     }
 
     #[pyfn(m)]
@@ -45,32 +45,32 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
         box_size: f64,
         binsize: f64,
         periodic: bool
-    ) -> (& 'py PyArray<f64>, & 'py PyArrayDyn<f64>) {
+    ) -> (& 'py PyArray1<f64>, & 'py PyArray<f64, Dim<[usize;2]>>) {
         // First we convert the Python numpy array into Rust ndarray
         // Here, you can specify different array sizes and types.
         let array = unsafe { points.as_array() }; // Convert to ndarray type
         let field_array = unsafe { field.as_array()}; // Same for field
-        let field_shape = field_array.shape; // Need to feed npoints x fielddim values
+        let field_shape = field_array.shape(); // Need to feed npoints x fielddim values
         
-        assert!(field_shape()[0] == array.shape()[0], "You must provide as many field lines as particles!");
+        assert!(field_shape[0] == array.shape()[0], "You must provide as many field lines as particles!");
 
         // Mutate the data
         // No need to return any value as the input data is mutated
         let (rdf, field_corrs) = rust_fn::compute_radial_correlations_2d(&array, &field_array, box_size, box_size, binsize, periodic);
-        let array_rdf =  PyArray::from_vec(py, &rdf).unwrap();
-        let rdf_shape = array_rdf.shape();
-        let array_field_corrs = PyArray::from_shape_vec((rdf_shape[0], field_shape[1]), field_corrs);
+        let array_rdf =  PyArray::from_vec(py, rdf);
+        let pyarray_field_corrs = PyArray::from_owned_array(py, field_corrs);
         
-        return(array_rdf, array_field_corrs)
+        return(array_rdf, pyarray_field_corrs)
     }
     
+    #[pyfn(m)]
     fn compute_2d_boops<'py>(
         py: Python<'py>,
         points: &PyArrayDyn<f64>,
         orders: &PyArrayDyn<usize>,
         box_size: f64,
         periodic: bool
-    )  -> & 'py PyArray2<f64> {
+    )  -> & 'py PyArray<f64, Dim<[usize; 3]>> {
         
         // First we convert the Python numpy array into Rust ndarray
         // Here, you can specify different array sizes and types.
@@ -78,7 +78,7 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
         let boop_order_array = unsafe { orders.as_array()}; // Same for field
         
         let boops = rust_fn::compute_steinhardt_boops_2d(&array, &boop_order_array, box_size, box_size, periodic);
-        let array_boops = PyArray::from_shape_vec((array.shape()[0], 2 * boop_order_array.shape()[0]), boops);
+        let array_boops = PyArray::from_owned_array(py, boops);
         
         return array_boops
     }
@@ -91,9 +91,12 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
 // Put it in mod to separate it from the python bindings
 mod rust_fn {
     use ndarray::parallel::prelude::*;
-    use numpy::ndarray::{ArrayView1,ArrayViewD};
-    use rand::Rng;
+    use ndarray::{Array,Dim,ShapeBuilder,s};
+    use numpy::ndarray::ArrayViewD;
     use std::sync::{Arc, RwLock};
+    use ang::atan2;
+    use libm::hypot;
+    use std::f64::consts::PI;
     extern crate spade;
     use nalgebra::Point2;
     use spade::delaunay::FloatDelaunayTriangulation;
@@ -137,11 +140,11 @@ mod rust_fn {
         let nbins = if periodic { (box_size_x / binsize).ceil() as usize} else { 2 * (box_size_x / binsize).ceil() as usize };
         
         let n_particles = points.shape()[0];
-        let mut rdf: Vec<Vec<Arc<RwLock<f64>>>> = vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; nbins];
+        let rdf: Vec<Vec<Arc<RwLock<f64>>>> = vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; nbins];
 
         
         (0..n_particles).into_par_iter().for_each(|i| {
-            for j in (i+1..n_particles) {
+            for j in i+1..n_particles {
                 
                 let xi = points[[i, 0]];
                 let xj = points[[j, 0]];
@@ -197,7 +200,7 @@ mod rust_fn {
         box_size_y: f64,
         binsize: f64,
         periodic: bool
-    ) -> (Vec<f64>, Vec<Vec<f64>>) {
+    ) -> (Vec<f64>, Array<f64, Dim<[usize; 2]>>) {
         // Check that the binsize is physical
         assert!(
             binsize > 0.0,
@@ -209,24 +212,27 @@ mod rust_fn {
         let field_dim = fields.shape()[1];
         let nbins = if periodic { (box_size_x / binsize).ceil() as usize} else { 2 * (box_size_x / binsize).ceil() as usize };
         let max_dist = hypot(box_size_x / 2.0, box_size_y / 2.0);
-        let mut rdf: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
-        let mut field_corrs: Vec<Vec<Arc<RwLock<f64>>>> = vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; field_dim];
+        let rdf: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
+        let field_corrs: Vec<Vec<Arc<RwLock<f64>>>> = vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; field_dim];
 
         // compute the mean values of the quantities used in correlations
         let mut mean_field: Vec<f64> = vec_no_clone![0.0; field_dim];
-        (0..n_particles).into_par_iter().for_each(|i| {
-            for dim in 0..field_dim {
-                mean_field[k] += field_array[[i,k]];
-            }
-        });
         for dim in 0..field_dim {
-            mean_field[k] /= n_particles as f64;
+            mean_field[dim] = fields.slice(s![.., dim]).into_par_iter().sum();
+        }
+        // (0..n_particles).into_par_iter().for_each(|i| {
+        //     for dim in 0..field_dim {
+        //         mean_field[dim] += fields[[i,dim]];
+        //     }
+        // });
+        for dim in 0..field_dim {
+            mean_field[dim] /= n_particles as f64;
         }
         
         // go through all pairs just once for all correlations and compute both rdf and the correlation
-        let mut counts: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
+        let counts: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
         (0..n_particles).into_par_iter().for_each(|i| {
-            'inner: for j in i + 1..n_particles {
+            for j in i + 1..n_particles {
                 
                 let xi = points[[i, 0]];
                 let xj = points[[j, 0]];
@@ -257,7 +263,7 @@ mod rust_fn {
         (0..nbins).into_par_iter().for_each(|bin| {
             
             // normalise the values of the correlations by counts
-            let current_count = counts[bin].read().unwrap();
+            let current_count = *counts[bin].read().unwrap();
             if current_count != 0.0 {
                 for k in 0..field_dim {
                     *(field_corrs[bin][k].write().unwrap()) /= current_count;
@@ -280,11 +286,11 @@ mod rust_fn {
         });
         
         let mut rdf_vector = vec![0.0; nbins];
-        let mut field_corr_vector = vec![vec![0.0; nbins]; field_dim];
+        let mut field_corrs_vector = Array::<f64, _>::zeros((nbins, field_dim).f());
         for bin in 0..nbins {
             rdf_vector[bin] =  *rdf.get(bin).unwrap().read().unwrap();
             for dim in 0..field_dim {
-                field_corrs_vector[bin][dim] = *field_corrs.get(bin).unwrap().get(dim).unwrap().read().unwrap();
+                field_corrs_vector[[bin,dim]] = *field_corrs.get(bin).unwrap().get(dim).unwrap().read().unwrap();
             }
         }
         
@@ -296,31 +302,31 @@ mod rust_fn {
     
     pub fn compute_steinhardt_boops_2d(
         points: &ArrayViewD<'_, f64>,
-        boop_order_array: &ArrayViewD<'_, f64>,
+        boop_order_array: &ArrayViewD<'_, usize>,
         box_size_x: f64,
         box_size_y: f64,
         periodic: bool
-    ) -> Vec<Vec<f64>> {
+    ) -> Array<f64, Dim<[usize; 3]>> {
         
         // get the needed parameters from the input
         let n_particles = points.shape()[0];
         let boop_orders_number = boop_order_array.shape()[1];
         
-        let mut boops: Vec<Vec<Vec<Arc<RwLock<f64>>>>> = vec_no_clone![vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); n_particles]; boop_orders_number]; 2];
+        let boops: Vec<Vec<Vec<Arc<RwLock<f64>>>>> = vec_no_clone![vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); n_particles]; boop_orders_number]; 2];
         let mut handles = Vec::new();
 
         let mut delaunay = FloatDelaunayTriangulation::with_walk_locate();
 
-        let max_index_periodic = if periodic {
-            9 * n_particles;
+        let max_index_periodic: usize = if periodic {
+            9 * n_particles
         } else {
-            n_particles;
-        }
+            n_particles
+        };
         
         // Enforce periodicity by adding copies.
         for i in 0..max_index_periodic {
-            let index = i % n_cars;
-            let quotient = i / n_cars;
+            let index = i % n_particles;
+            let quotient = i / n_particles;
             let nx = match quotient / 3 {
                 0 => 0.0,
                 1 => -1.0,
@@ -354,13 +360,16 @@ mod rust_fn {
             let outgoing_edges = dynamic_handle.ccw_out_edges();
 
             let mut neighbour_count = 0;
+            
+            let xi = points[[i, 0]];
+            let yi = points[[i, 1]];
 
             for e in outgoing_edges {
                 neighbour_count += 1;
 
                 let neigh_vertex = *e.to();
-                let dx = neigh_vertex[0] - x[i];
-                let dy = neigh_vertex[1] - y[i];
+                let dx = neigh_vertex[0] - xi;
+                let dy = neigh_vertex[1] - yi;
                 let mut vector = vec![dx, dy];
                 if periodic {
                     ensure_periodicity(&mut vector, box_size_x, box_size_y);
@@ -369,34 +378,34 @@ mod rust_fn {
                 let theta = atan2(vector[1], vector[0]);
 
                 for n in 0..boop_orders_number {
-                    let order = boop_order_array[[n]];
+                    let order = boop_order_array[[n]] as f64;
                     let angle = order * theta;
                     
                     let dpsinx = angle.cos();
                     let dpsiny = angle.sin();
                     
-                    *(boops[i][n][0].write().unlock()) += dpsinx;
-                    *(boops[i][n][1].write().unlock()) += dpsiny;
+                    *(boops[i][n][0].write().unwrap()) += dpsinx;
+                    *(boops[i][n][1].write().unwrap()) += dpsiny;
                     
                 }
             }
 
             
             for n in 0..boop_orders_number {
-                *(boops[i][n][0].write().unlock()) /= neighbour_count as f64;
-                *(boops[i][n][1].write().unlock()) /= neighbour_count as f64;
+                *(boops[i][n][0].write().unwrap()) /= neighbour_count as f64;
+                *(boops[i][n][1].write().unwrap()) /= neighbour_count as f64;
             }
         });
-
-        let boop_vectors: Vec<Vec<Vec<f64>>> = vec![vec![vec![0.0; n_particles]; boop_orders_number]; 2];
+        
+        let mut boop_vectors = Array::<f64, _>::zeros((n_particles, boop_orders_number, 2).f()); 
         for i in 0..n_particles{
             for n in 0..boop_orders_number {
-                boop_vectors[i][n][0] = *(boops[i][n][0].read().unlock());
-                boop_vectors[i][n][1] = *(boops[i][n][1].read().unlock());
+                boop_vectors[[i,n,0]] = *(boops[i][n][0].read().unwrap());
+                boop_vectors[[i,n,1]] = *(boops[i][n][1].read().unwrap());
             }
         }
         
-        return boops_vector;
+        return boop_vectors;
     }
     
 }

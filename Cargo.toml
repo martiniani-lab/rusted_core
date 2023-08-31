@@ -17,3 +17,4 @@ rayon = "*"
 spade = '1.8.1'
 nalgebra = '0.18.1'
 ang = '*'
+libm = '*'
