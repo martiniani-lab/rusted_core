@@ -1,0 +1,19 @@
+[package]
+name = "rdf"
+version = "0.1.0"
+authors = ["mkasiulis"]
+edition = "2021"
+
+[lib]
+name = "rust"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = "*"
+rand ="*"
+numpy = "*"
+ndarray = {version = "*", features = ["rayon"]}
+rayon = "*"
+spade = '1.8.1'
+nalgebra = '0.18.1'
+ang = '*'
