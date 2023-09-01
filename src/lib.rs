@@ -67,7 +67,7 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     fn compute_2d_boops<'py>(
         py: Python<'py>,
         points: &PyArrayDyn<f64>,
-        orders: &PyArrayDyn<usize>,
+        orders: &PyArrayDyn<isize>,
         box_size: f64,
         periodic: bool
     )  -> & 'py PyArray<f64, Dim<[usize; 3]>> {
@@ -98,8 +98,7 @@ mod rust_fn {
     use libm::hypot;
     use std::f64::consts::PI;
     extern crate spade;
-    use nalgebra::Point2;
-    use spade::delaunay::FloatDelaunayTriangulation;
+    use spade::{DelaunayTriangulation, Triangulation, Point2};
 
     // Vectors of RwLocks cannot be initialized with a clone!
     macro_rules! vec_no_clone {
@@ -210,10 +209,11 @@ mod rust_fn {
         // get the needed parameters from the input
         let n_particles = points.shape()[0];
         let field_dim = fields.shape()[1];
-        let nbins = if periodic { (box_size_x / binsize).ceil() as usize} else { 2 * (box_size_x / binsize).ceil() as usize };
-        let max_dist = hypot(box_size_x / 2.0, box_size_y / 2.0);
+        let max_dist = if periodic {hypot(box_size_x / 2.0, box_size_y / 2.0)} else {hypot(box_size_x, box_size_y)};
+        let nbins = (max_dist / binsize).ceil() as usize;
+        let max_dist = if periodic {hypot(box_size_x / 2.0, box_size_y / 2.0)} else {hypot(box_size_x, box_size_y)};
         let rdf: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
-        let field_corrs: Vec<Vec<Arc<RwLock<f64>>>> = vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; field_dim];
+        let field_corrs: Vec<Vec<Arc<RwLock<f64>>>> = vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); field_dim]; nbins];
 
         // compute the mean values of the quantities used in correlations
         let mut mean_field: Vec<f64> = vec_no_clone![0.0; field_dim];
@@ -271,15 +271,20 @@ mod rust_fn {
 
                 // THEN only, compute the rdf from counts
                 let bincenter = (bin as f64 + 0.5) * binsize;
-                // Use the actual normalization in a square, not the lazy one
-                let normalisation = if bincenter <= box_size_x / 2.0 {
+                // Use the actual normalization in a square, not the lazy one, if periodic
+                let normalisation = if periodic {
+                    if bincenter <= box_size_x / 2.0 {
                     2.0 * PI * bincenter * binsize * n_particles as f64 / (box_size_x * box_size_y)
-                // (2 pi r  rho dr)
+                    // (2 pi r  rho dr)
+                    } else {
+                        binsize * n_particles as f64 / (box_size_x * box_size_y)
+                            * 2.0
+                            * bincenter
+                            * (PI - 4.0 * (0.5 * box_size_x / bincenter).acos()) // rho dr * 2 r *( pi - 4 acos(L/2r))
+                    }
                 } else {
-                    binsize * n_particles as f64 / (box_size_x * box_size_y)
-                        * 2.0
-                        * bincenter
-                        * (PI - 4.0 * (0.5 * box_size_x / bincenter).acos()) // rho dr * 2 r *( pi - 4 acos(L/2r))
+                    2.0 * PI * bincenter * binsize * n_particles as f64 / (box_size_x * box_size_y)
+                    // (2 pi r  rho dr)
                 };
                 *(rdf[bin].write().unwrap()) = current_count / (n_particles as f64 * normalisation / 2.0); // the number of count is 1/ averaged over N 2/ normalised by the uniform case 3/ divided by two because pairs are counted once only
             }
@@ -302,7 +307,7 @@ mod rust_fn {
     
     pub fn compute_steinhardt_boops_2d(
         points: &ArrayViewD<'_, f64>,
-        boop_order_array: &ArrayViewD<'_, usize>,
+        boop_order_array: &ArrayViewD<'_, isize>,
         box_size_x: f64,
         box_size_y: f64,
         periodic: bool
@@ -310,12 +315,12 @@ mod rust_fn {
         
         // get the needed parameters from the input
         let n_particles = points.shape()[0];
-        let boop_orders_number = boop_order_array.shape()[1];
+        let boop_orders_number = boop_order_array.shape()[0];
         
-        let boops: Vec<Vec<Vec<Arc<RwLock<f64>>>>> = vec_no_clone![vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); n_particles]; boop_orders_number]; 2];
+        let boops: Vec<Vec<Vec<Arc<RwLock<f64>>>>> = vec_no_clone![vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); 2]; boop_orders_number]; n_particles];
         let mut handles = Vec::new();
 
-        let mut delaunay = FloatDelaunayTriangulation::with_walk_locate();
+        let mut delaunay: DelaunayTriangulation<Point2<f64>> = DelaunayTriangulation::new();
 
         let max_index_periodic: usize = if periodic {
             9 * n_particles
@@ -350,14 +355,13 @@ mod rust_fn {
 
             let newpoint: Point2<f64> = Point2::new(shifted_x, shifted_y);
 
-            let handle = delaunay.insert(newpoint);
+            let handle = delaunay.insert(newpoint).unwrap(); // Should compare cost, but this is the easiest way to keep track of particles compared to bulk_load+locate
             handles.push(handle);
         }
 
         (0..n_particles).into_par_iter().for_each(|i| {
-            // let delaunay_handle = FloatDelaunayTriangulation::locate_vertex(Point2::new(x[i], y[i]));
             let dynamic_handle = delaunay.vertex(handles[i]);
-            let outgoing_edges = dynamic_handle.ccw_out_edges();
+            let outgoing_edges = dynamic_handle.out_edges();
 
             let mut neighbour_count = 0;
             
@@ -367,9 +371,9 @@ mod rust_fn {
             for e in outgoing_edges {
                 neighbour_count += 1;
 
-                let neigh_vertex = *e.to();
-                let dx = neigh_vertex[0] - xi;
-                let dy = neigh_vertex[1] - yi;
+                let neigh_vertex = e.to().position();
+                let dx = neigh_vertex.x - xi;
+                let dy = neigh_vertex.y - yi;
                 let mut vector = vec![dx, dy];
                 if periodic {
                     ensure_periodicity(&mut vector, box_size_x, box_size_y);

@@ -7,7 +7,9 @@ import hickle as hkl
 import sys
 
 # points = np.random.rand(10000,2)
-points = hkl.load("/home/mathias/quasiquasi7crystal2d_K100 (2).hkl")[:,:-1]
+# points = hkl.load("/home/mathias/quasiquasi7crystal2d_K100 (2).hkl")[:,:-1]
+# points = np.loadtxt("/home/mathias/quasicrystal7deBruijndual.csv")
+points = np.loadtxt("/home/mathias/Documents/remote/hard_disk_tests_Shen/Phi0.7200/001/dump.txt")[:,0:2]
 # points = hkl.load("/home/mathias/Documents/snek/HPY2D_phi0.6_a0.0_N262144_K256_points_0.hkl")[:,:-1]
 # points = hkl.load("/home/mathias/Documents/snek/HPY2D_phi0.6_a0.0_N50000000_K5050.0_points_0.hkl")[:,:-1]
 # points = hkl.load("/home/mathias/Documents/snek/HPY3D_phi0.25_a0.0_N1000000_K64_points_0.hkl")[:,:-1]
@@ -22,12 +24,12 @@ points /= points.max()
 boxsize = 1.0
 radius = boxsize / (npoints)**(1.0/ndim)
 binsize = radius / 20.0
-periodic = False
+periodic = True
 logscaleplot = False
 
 if ndim == 2:
     
-    boop_orders = np.array([5,6,7])
+    boop_orders = np.array([6])
     
     boops = rust.compute_2d_boops(points, boop_orders, boxsize, periodic)
     print(boops.shape)
@@ -49,6 +51,12 @@ fig = plt.figure(figsize=(10,10))
 ax = fig.gca()
 pc = ax.plot(bins, radial_rdf)
 plt.savefig("radial_rdf_test.png", dpi = 300)
+plt.close()
+
+fig = plt.figure(figsize=(10,10))
+ax = fig.gca()
+pc = ax.plot(bins, g7[:,0]+g7[:,1])
+plt.savefig("radial_g7_test.png", dpi = 300)
 plt.close()
 
 fig = plt.figure(figsize=(10,10))
