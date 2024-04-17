@@ -16,7 +16,7 @@ file_path = sys.argv[1]
 [dname,file_name] = os.path.split(file_path)
 dname = os.path.abspath(dname)
 
-points = hkl.load(dname+file_name)[:,:-1]
+points = hkl.load(file_path)[:,:-1]
 
 # points = hkl.load("/home/mathias/Documents/snek/hyperalg-master/HPY2D/phi0.6/a-3.0/HPY2D_phi0.6_a-3.0_N50000000_K5050.0_points_0.hkl")[:,:-1]
 points -= np.mean(points)
@@ -29,6 +29,8 @@ points *= 0.5
 ndim = points.shape[1]
 npoints = points.shape[0]
 
+order = 200
+
 boxsize = 1.0
 radius = boxsize / (npoints)**(1.0/ndim)
 binsize = radius / 20.0
@@ -37,7 +39,8 @@ logscaleplot = False
 vmaxmax = 10
 
 if ndim == 2:
-    vector_rdf = rust.compute_vector_rdf2d(points, boxsize, binsize, periodic)
+    # vector_rdf = rust.compute_vector_rdf2d(points, boxsize, binsize, periodic)
+    vector_rdf, vector_orientation = rust.compute_vector_orientation_corr_2d(points, boxsize, binsize, periodic, order)
 elif ndim == 3:
     print("Not implemented in 3d for now")
 else: 
@@ -46,8 +49,11 @@ else:
 nbins = np.ceil(boxsize/binsize)
 rho_n = npoints * npoints / ( boxsize * boxsize)
 vector_rdf /= rho_n * binsize * binsize
+
+vector_orientation = np.sum(vector_orientation,axis=-1)
     
 np.savetxt(file_name+"vector_rdf_test.csv", vector_rdf)
+np.savetxt(file_name+"vector_orientation_test.csv", vector_orientation)
 
 if periodic:
     center = int(vector_rdf.shape[0]/2)
@@ -61,7 +67,7 @@ ax = fig.gca()
 if logscaleplot:
     pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1],norm=clr.LogNorm(vmin=1e-3,vmax=1e1), cmap=cmr.ember)
 else:
-    vmax = np.min([vector_rdf.max(), 2])
+    vmax = np.min([vector_rdf.max(), vmaxmax])
     pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1], vmin = 0, vmax = vmax, cmap=cmr.ember)
 fig.colorbar(pc)
 plt.savefig(file_name+"_vector_rdf_test.png", dpi = 300)
@@ -72,4 +78,15 @@ fig = plt.figure(figsize=(10,10))
 ax = fig.gca()
 pc = ax.plot(vector_rdf[center, center-width:center+width+1])
 plt.savefig(file_name +"_vector_rdf_test_centerline.png", dpi = 300)
+plt.close()
+
+fig = plt.figure(figsize=(10,10))
+ax = fig.gca()
+if logscaleplot:
+    pc = ax.imshow(vector_orientation[center-width:center+width+1, center-width:center+width+1],norm=clr.LogNorm(vmin=1e-3,vmax=1e1), cmap=cmr.ember)
+else:
+    vmax = np.min([vector_orientation.max(), vmaxmax])
+    pc = ax.imshow(vector_orientation[center-width:center+width+1, center-width:center+width+1], vmin = 0, vmax = vmax, cmap=cmr.ember)
+fig.colorbar(pc)
+plt.savefig(file_name+"_vector_orientation_test.png", dpi = 300)
 plt.close()

@@ -11,7 +11,7 @@ file_path = sys.argv[1]
 [dname,file_name] = os.path.split(file_path)
 dname = os.path.abspath(dname)
 
-points = hkl.load(dname+file_name)[:,:-1]
+points = hkl.load(file_path)[:,:-1]
 
 ndim = points.shape[1]
 npoints = points.shape[0]

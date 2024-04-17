@@ -36,6 +36,28 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
         
         return array_rdf
     }
+    
+    #[pyfn(m)]
+    fn compute_vector_orientation_corr_2d<'py>(
+        py: Python<'py>,
+        points: &PyArrayDyn<f64>,
+        box_size: f64,
+        binsize: f64,
+        periodic: bool,
+        order: u64
+    ) -> (& 'py PyArray2<f64>, & 'py PyArray<f64, Dim<[usize;3]>>) {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+
+        // Mutate the data
+        // No need to return any value as the input data is mutated
+        let (vector_rdf, vector_corr) = rust_fn::compute_vector_orientation_corr_2d(&array, box_size, binsize, periodic, order);
+        let array_rdf =  PyArray2::from_vec2(py, &vector_rdf).unwrap();
+        let array_corr =  PyArray::from_owned_array(py, vector_corr);
+        
+        return (array_rdf, array_corr)
+    }
 
     #[pyfn(m)]
     fn compute_radial_correlations_2d<'py>(
@@ -121,8 +143,6 @@ mod rust_fn {
         return rdf;
     }
     
-    
-    
     pub fn compute_particle_correlations(
         points: &ArrayViewD<'_, f64>,
         box_size_x: f64,
@@ -175,6 +195,97 @@ mod rust_fn {
         }
         
         return rdf_vector;
+    }
+    
+    pub fn compute_vector_orientation_corr_2d(
+        points: &ArrayViewD<'_, f64>, 
+        box_size: f64, 
+        binsize: f64, 
+        periodic: bool, 
+        order: u64
+    ) -> (Vec<Vec<f64>>, Array<f64, Dim<[usize; 3]>>) {
+
+        let npoints = points.shape()[0];
+        let ndim = points.shape()[1];
+        println!("Found {:?} points in d = {:?}", npoints, ndim);
+        assert!(ndim == 2);
+        
+        // Compute the correlations
+        let (rdf, corr) = compute_particle_orientation_correlations(&points, box_size, box_size, binsize, periodic, order);
+        
+        return (rdf, corr)
+    }
+    
+    pub fn compute_particle_orientation_correlations(
+        points: &ArrayViewD<'_, f64>,
+        box_size_x: f64,
+        box_size_y: f64,
+        binsize: f64,
+        periodic: bool,
+        order: u64
+    ) -> (Vec<Vec<f64>>, Array<f64, Dim<[usize; 3]>>) {
+        // Check that the binsize is physical
+        assert!(
+            binsize > 0.0,
+            "Something is wrong with the binsize used for the RDF"
+        );
+
+        let nbins = if periodic { (box_size_x / binsize).ceil() as usize} else { 2 * (box_size_x / binsize).ceil() as usize };
+        
+        let n_particles = points.shape()[0];
+        let rdf: Vec<Vec<Arc<RwLock<f64>>>> = vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; nbins];
+        let corr: Vec<Vec<Vec<Arc<RwLock<f64>>>>> = vec_no_clone![vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); 2]; nbins]; nbins];
+        
+        (0..n_particles).into_par_iter().for_each(|i| {
+            for j in i+1..n_particles {
+                
+                let xi = points[[i, 0]];
+                let xj = points[[j, 0]];
+                let yi = points[[i, 1]];
+                let yj = points[[j, 1]];
+                
+                let mut r_ij = vec![xj - xi, yj - yi];
+                if periodic {
+                    ensure_periodicity(&mut r_ij, box_size_x, box_size_y);
+                }
+            
+                // determine the relevant bin, and update the count at that bin
+                let index_x = ((r_ij[0] + 0.5 * box_size_x) / binsize).floor() as usize;
+                let index_y = ((r_ij[1] + 0.5 * box_size_y) / binsize).floor() as usize;
+                *(rdf[index_x][index_y].write().unwrap()) += 1.0;
+                
+                // Compute the orientational part
+                let theta_ij = atan2(r_ij[1], r_ij[0]);
+                let angle = order as f64 * theta_ij;
+                let dpsinx = angle.cos();
+                let dpsiny = angle.sin();
+                
+                *(corr[index_x][index_y][0].write().unwrap()) += dpsinx;
+                *(corr[index_x][index_y][1].write().unwrap()) += dpsiny;
+                
+
+                // Use symmetry
+                let index_x_symm = ((0.5 * box_size_x - r_ij[0]) / binsize).floor() as usize;
+                let index_y_symm = ((0.5 * box_size_y - r_ij[1]) / binsize).floor() as usize;
+                *(rdf[index_x_symm][index_y_symm].write().unwrap()) += 1.0;
+                
+                *(corr[index_x_symm][index_y_symm][0].write().unwrap()) += dpsinx;
+                *(corr[index_x_symm][index_y_symm][1].write().unwrap()) += dpsiny;
+            }
+        });
+        
+        let mut rdf_vector = vec![vec![0.0; nbins]; nbins];
+        let mut corr_vector = Array::<f64, _>::zeros((nbins, nbins, 2).f());
+        for i in 0..nbins {
+            for j in 0..nbins {
+                rdf_vector[i][j] = *rdf.get(i).unwrap().get(j).unwrap().read().unwrap();
+                for dim in 0..2 {
+                    corr_vector[[i,j,dim]] = *corr.get(i).unwrap().get(j).unwrap().get(dim).unwrap().read().unwrap();
+                }
+            }
+        }
+        
+        return (rdf_vector, corr_vector)
     }
     
     pub fn ensure_periodicity(v: &mut Vec<f64>, box_size_x: f64, box_size_y: f64) {
