@@ -38,7 +38,7 @@ points /= points.max()
 boxsize = 1.0
 radius = boxsize / (npoints)**(1.0/ndim)
 binsize = radius / 20.0
-periodic = True
+periodic = False
 logscaleplot = False
 
 if ndim == 2:
@@ -51,10 +51,14 @@ if ndim == 2:
     _, gboop = rust.compute_radial_correlations_2d(points, boops[:,-1,:], boxsize, binsize, periodic)
     
     nK =100
+    peak_angle = 0
+    # nK = 71.4286
+    # peak_angle = 2*np.pi/6.0 *  (-1.98154)/(2.0*np.pi)
     K = 2.0 * np.pi * nK / boxsize
+    exponent = K * points[:,0] * np.cos(peak_angle) + K * points[:,1] * np.sin(peak_angle)
     
-    translational_x = np.cos(K*points[:,0])
-    translational_y = np.sin(K*points[:,0])
+    translational_x = np.cos(exponent)
+    translational_y = np.sin(exponent)
     translational = np.vstack([translational_x,translational_y]).T
     
     np.savetxt(file_name+"_translational_"+str(nK)+".csv", translational)
@@ -81,10 +85,8 @@ radial_rdf = data[:,1]
 
 fig = plt.figure()#figsize=(10,10))
 ax = fig.gca()
-pc = ax.plot(bins, radial_rdf,c=cmr.ember(0.5), label = 'Minimized System')
-#pc = ax.plot(r/Nk, g*(r/Nk>=2*rad),c='grey',linestyle='dashed', label='Percus-Yevick')
+pc = ax.plot(bins, radial_rdf,c=cmr.ember(0.5))
 ax.set_xlim(0,0.5)
-ax.legend(loc='upper right',fontsize=24)
 pc = ax.plot(bins, radial_rdf,c=cmr.ember(0.5))
 ax.tick_params(labelsize=18)
 ax.set_xlabel(r"$r$",fontsize=18)
@@ -104,12 +106,14 @@ np.savetxt(file_name+"_radial_gboop_test.csv", np.vstack([bins,gboop[:,0]+gboop[
 fig = plt.figure(figsize=(10,10))
 ax = fig.gca()
 pc = ax.plot(bins, gboop[:,0]+gboop[:,1])
-ax.set_xlim(0,0.1)
+ax.set_xlim(0,0.5)
 plt.savefig(file_name+"_radial_gboop_test.png", dpi = 300)
 plt.close()
 
-# fig = plt.figure(figsize=(10,10))
-# ax = fig.gca()
-# pc = ax.scatter(boops[:,-1,0], boops[:,-1,1])
-# plt.savefig("psi6_"+str(phi)+"_test.png", dpi = 300)
-# plt.close()
+np.savetxt(file_name+"_boop"+str(boop_orders[-1])+"_test.csv", np.vstack([boops[:,-1,0],boops[:,-1,1]]).T)
+
+fig = plt.figure(figsize=(10,10))
+ax = fig.gca()
+pc = ax.scatter(boops[:,-1,0], boops[:,-1,1])
+plt.savefig(file_name+"psi"+str(boop_orders[-1])+"_test.png", dpi = 300)
+plt.close()
