@@ -16,7 +16,24 @@ file_path = sys.argv[1]
 [dname,file_name] = os.path.split(file_path)
 dname = os.path.abspath(dname)
 
-points = hkl.load(file_path)[:,:-1]
+if '.hkl' in file_path:
+    points = hkl.load(file_path)[:,:-1]
+elif '.txt' in file_path:
+    
+    with open(file_path, 'r') as file:
+        first_line = file.readline()
+    # Determine the delimiter based on the first line
+    if ',' in first_line:
+        delimiter = ','
+    elif ' ' in first_line:
+        delimiter = ' '
+    else:
+        raise NotImplementedError("Delimiter not identified")
+    
+    points = np.loadtxt(file_path, delimiter=delimiter)[:,0:2]
+else:
+    print("Wrong file format")
+    sys.exit()
 
 # points = hkl.load("/home/mathias/Documents/snek/hyperalg-master/HPY2D/phi0.6/a-3.0/HPY2D_phi0.6_a-3.0_N50000000_K5050.0_points_0.hkl")[:,:-1]
 points -= np.mean(points)
