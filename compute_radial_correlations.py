@@ -39,6 +39,7 @@ boxsize = 1.0
 radius = boxsize / (npoints)**(1.0/ndim)
 binsize = radius / 20.0
 periodic = False
+connected = False
 logscaleplot = False
 
 if ndim == 2:
@@ -48,12 +49,12 @@ if ndim == 2:
     boops = rust.compute_2d_boops(points, boop_orders, boxsize, periodic)
     print(boops.shape)
     
-    _, gboop = rust.compute_radial_correlations_2d(points, boops[:,-1,:], boxsize, binsize, periodic)
+    _, gboop = rust.compute_radial_correlations_2d(points, boops[:,-1,:], boxsize, binsize, periodic,connected)
     
     nK =100
     peak_angle = 0
-    # nK = 71.4286
-    # peak_angle = 2*np.pi/6.0 *  (-1.98154)/(2.0*np.pi)
+    nK = 82.3286
+    peak_angle = 2*np.pi/6.0 *  (2.27)/(2.0*np.pi)
     K = 2.0 * np.pi * nK / boxsize
     exponent = K * points[:,0] * np.cos(peak_angle) + K * points[:,1] * np.sin(peak_angle)
     
@@ -63,7 +64,7 @@ if ndim == 2:
     
     np.savetxt(file_name+"_translational_"+str(nK)+".csv", translational)
     
-    radial_rdf, corr = rust.compute_radial_correlations_2d(points, translational, boxsize, binsize, periodic)
+    radial_rdf, corr = rust.compute_radial_correlations_2d(points, translational, boxsize, binsize, periodic, connected)
 
     print(radial_rdf.shape)
     # print(g7.shape)
@@ -76,10 +77,15 @@ nbins = radial_rdf.shape[0]
 bins = (np.arange(0, nbins) + 0.5)*binsize
 print(bins.shape)
 
+if connected:
+    suffix = "_connected"
+else:
+    suffix = ""
+
 #np.savetxt("points.csv", points)
-np.savetxt(file_name+"_radial_rdf_test.csv", np.vstack([bins,radial_rdf]).T)
-np.savetxt(file_name+"_radial_corr_test.csv", np.vstack([bins,corr[:,0]+corr[:,1]]).T)
-data = np.loadtxt(file_name+"_radial_rdf_test.csv")
+np.savetxt(file_name+"_radial_rdf.csv", np.vstack([bins,radial_rdf]).T)
+np.savetxt(file_name+"_radial_corr"+suffix+".csv", np.vstack([bins,corr[:,0]+corr[:,1]]).T)
+data = np.loadtxt(file_name+"_radial_rdf.csv")
 bins = data[:,0]
 radial_rdf = data[:,1]
 
@@ -91,23 +97,23 @@ pc = ax.plot(bins, radial_rdf,c=cmr.ember(0.5))
 ax.tick_params(labelsize=18)
 ax.set_xlabel(r"$r$",fontsize=18)
 ax.set_ylabel(r"$g(r)$",fontsize=18)
-plt.savefig(file_name+"_radial_rdf_test.png", bbox_inches = 'tight',pad_inches = 0, dpi = 300)
+plt.savefig(file_name+"_radial_rdf.png", bbox_inches = 'tight',pad_inches = 0, dpi = 300)
 plt.close()
 
 fig = plt.figure(figsize=(10,10))
 ax = fig.gca()
 pc = ax.plot(bins, corr[:,0]+corr[:,1])
 ax.set_xlim(0,0.5)
-plt.savefig(file_name+"_radial_corr_"+str(nK)+"_test.png", dpi = 300)
+plt.savefig(file_name+"_radial_corr_"+str(nK)+suffix+".png", dpi = 300)
 plt.close()
 
-np.savetxt(file_name+"_radial_gboop_test.csv", np.vstack([bins,gboop[:,0]+gboop[:,1]]).T)
+np.savetxt(file_name+"_radial_gboop"+suffix+ ".csv", np.vstack([bins,gboop[:,0]+gboop[:,1]]).T)
 
 fig = plt.figure(figsize=(10,10))
 ax = fig.gca()
 pc = ax.plot(bins, gboop[:,0]+gboop[:,1])
 ax.set_xlim(0,0.5)
-plt.savefig(file_name+"_radial_gboop_test.png", dpi = 300)
+plt.savefig(file_name+"_radial_gboop"+suffix+".png", dpi = 300)
 plt.close()
 
 np.savetxt(file_name+"_boop"+str(boop_orders[-1])+"_test.csv", np.vstack([boops[:,-1,0],boops[:,-1,1]]).T)

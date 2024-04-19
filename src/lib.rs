@@ -66,7 +66,8 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
         field: &PyArrayDyn<f64>,
         box_size: f64,
         binsize: f64,
-        periodic: bool
+        periodic: bool,
+        connected: bool
     ) -> (& 'py PyArray1<f64>, & 'py PyArray<f64, Dim<[usize;2]>>) {
         // First we convert the Python numpy array into Rust ndarray
         // Here, you can specify different array sizes and types.
@@ -78,7 +79,7 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
 
         // Mutate the data
         // No need to return any value as the input data is mutated
-        let (rdf, field_corrs) = rust_fn::compute_radial_correlations_2d(&array, &field_array, box_size, box_size, binsize, periodic);
+        let (rdf, field_corrs) = rust_fn::compute_radial_correlations_2d(&array, &field_array, box_size, box_size, binsize, periodic, connected);
         let array_rdf =  PyArray::from_vec(py, rdf);
         let pyarray_field_corrs = PyArray::from_owned_array(py, field_corrs);
         
@@ -309,7 +310,8 @@ mod rust_fn {
         box_size_x: f64,
         box_size_y: f64,
         binsize: f64,
-        periodic: bool
+        periodic: bool,
+        connected: bool
     ) -> (Vec<f64>, Array<f64, Dim<[usize; 2]>>) {
         // Check that the binsize is physical
         assert!(
@@ -366,7 +368,11 @@ mod rust_fn {
 
                 // Also compute the field correlation
                 for k in 0..field_dim {
-                    *(field_corrs[index][k].write().unwrap()) += (fields[[i,k]] - mean_field[k]) * (fields[[j,k]] - mean_field[k]);
+                    if connected {
+                        *(field_corrs[index][k].write().unwrap()) += (fields[[i,k]] - mean_field[k]) * (fields[[j,k]] - mean_field[k]);
+                    } else {
+                        *(field_corrs[index][k].write().unwrap()) += fields[[i,k]] * fields[[j,k]];
+                    }
                 }
             }
         });
