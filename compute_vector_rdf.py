@@ -59,7 +59,32 @@ if ndim == 2:
     # vector_rdf = rust.compute_vector_rdf2d(points, boxsize, binsize, periodic)
     vector_rdf, vector_orientation = rust.compute_vector_orientation_corr_2d(points, boxsize, binsize, periodic, order)
 elif ndim == 3:
-    print("Not implemented in 3d for now")
+    vector_rdf = rust.compute_vector_rdf3d(points, boxsize, binsize, periodic)
+    nbins = np.ceil(boxsize/binsize)
+    rho_n = npoints * npoints / ( boxsize * boxsize * boxsize)
+    vector_rdf /= rho_n * binsize * binsize * binsize
+    
+    hkl.dump(vector_rdf, file_name+"vector_rdf_test.hkl")
+    
+    if periodic:
+        center = int(vector_rdf.shape[0]/2)
+        width = int(vector_rdf.shape[1]/2)
+    else:
+        center = int(vector_rdf.shape[0]/4)
+        width = int(vector_rdf.shape[1]/4)
+
+    fig = plt.figure(figsize=(10,10))
+    ax = fig.gca()
+    if logscaleplot:
+        pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1, center],norm=clr.LogNorm(vmin=1e-3,vmax=1e1), cmap=cmr.ember)
+    else:
+        vmax = np.min([vector_rdf.max(), vmaxmax])
+        pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1, center], vmin = 0, vmax = vmax, cmap=cmr.ember)
+    fig.colorbar(pc)
+    plt.savefig(file_name+"_vector_rdf_test.png", dpi = 300)
+    plt.close()
+    
+    sys.exit()
 else: 
     print("Wrong dimensionality!")
     

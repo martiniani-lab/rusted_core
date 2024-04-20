@@ -1,4 +1,4 @@
-use numpy::{PyArray, PyArray1, PyArray2, PyArrayDyn};
+use numpy::{PyArray, PyArray1, PyArray2, PyArray3, PyArrayDyn};
 use ndarray::Dim;
 use pyo3::prelude::{pymodule, PyModule, PyResult, Python};
 
@@ -33,6 +33,26 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
         // No need to return any value as the input data is mutated
         let vector_rdf = rust_fn::compute_vector_rdf2d(&array, box_size, binsize, periodic);
         let array_rdf =  PyArray2::from_vec2(py, &vector_rdf).unwrap();
+        
+        return array_rdf
+    }
+    
+    #[pyfn(m)]
+    fn compute_vector_rdf3d<'py>(
+        py: Python<'py>,
+        points: &PyArrayDyn<f64>,
+        box_size: f64,
+        binsize: f64,
+        periodic: bool
+    ) -> & 'py PyArray3<f64> {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+
+        // Mutate the data
+        // No need to return any value as the input data is mutated
+        let vector_rdf = rust_fn::compute_vector_rdf3d(&array, box_size, binsize, periodic);
+        let array_rdf =  PyArray3::from_vec3(py, &vector_rdf).unwrap();
         
         return array_rdf
     }
@@ -314,6 +334,81 @@ mod rust_fn {
         }
         
         return (rdf_vector, corr_vector)
+    }
+    
+    
+    pub fn compute_vector_rdf3d(points: &ArrayViewD<'_, f64>, box_size: f64, binsize: f64, periodic: bool) -> Vec<Vec<Vec<f64>>> {
+
+        let npoints = points.shape()[0];
+        let ndim = points.shape()[1];
+        println!("Found {:?} points in d = {:?}", npoints, ndim);
+        assert!(ndim == 3);
+        
+        // Compute the correlations
+        let rdf = compute_particle_correlations_3d(&points, box_size, box_size, box_size, binsize, periodic);
+        
+        return rdf;
+    }
+    
+    pub fn compute_particle_correlations_3d(
+        points: &ArrayViewD<'_, f64>,
+        box_size_x: f64,
+        box_size_y: f64,
+        box_size_z: f64,
+        binsize: f64,
+        periodic: bool
+    ) -> Vec<Vec<Vec<f64>>> {
+        // Check that the binsize is physical
+        assert!(
+            binsize > 0.0,
+            "Something is wrong with the binsize used for the RDF"
+        );
+
+        let nbins = if periodic { (box_size_x / binsize).ceil() as usize} else { 2 * (box_size_x / binsize).ceil() as usize };
+        
+        let n_particles = points.shape()[0];
+        let rdf: Vec<Vec<Vec<Arc<RwLock<f64>>>>> = vec_no_clone![vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; nbins]; nbins];
+
+        
+        (0..n_particles).into_par_iter().for_each(|i| {
+            for j in i+1..n_particles {
+                
+                let xi = points[[i, 0]];
+                let xj = points[[j, 0]];
+                let yi = points[[i, 1]];
+                let yj = points[[j, 1]];
+                let zi = points[[i, 2]];
+                let zj = points[[j, 2]];
+                
+                let mut r_ij = vec![xj - xi, yj - yi, zj - zi];
+                if periodic {
+                    ensure_periodicity_3d(&mut r_ij, box_size_x, box_size_y, box_size_z);
+                }
+            
+                // determine the relevant bin, and update the count at that bin
+                let index_x = ((r_ij[0] + 0.5 * box_size_x) / binsize).floor() as usize;
+                let index_y = ((r_ij[1] + 0.5 * box_size_y) / binsize).floor() as usize;
+                let index_z = ((r_ij[2] + 0.5 * box_size_z) / binsize).floor() as usize;
+                *(rdf[index_x][index_y][index_z].write().unwrap()) += 1.0;
+
+                // Use symmetry
+                let index_x_symm = ((0.5 * box_size_x - r_ij[0]) / binsize).floor() as usize;
+                let index_y_symm = ((0.5 * box_size_y - r_ij[1]) / binsize).floor() as usize;
+                let index_z_symm = ((0.5 * box_size_z - r_ij[2]) / binsize).floor() as usize;
+                *(rdf[index_x_symm][index_y_symm][index_z_symm].write().unwrap()) += 1.0;
+            }
+        });
+        
+        let mut rdf_vector = vec![vec![vec![0.0; nbins]; nbins]; nbins];
+        for i in 0..nbins {
+            for j in 0..nbins {
+                for k in 0..nbins {
+                    rdf_vector[i][j][k] = *rdf.get(i).unwrap().get(j).unwrap().get(k).unwrap().read().unwrap();
+                }
+            }
+        }
+        
+        return rdf_vector;
     }
     
     pub fn ensure_periodicity(v: &mut Vec<f64>, box_size_x: f64, box_size_y: f64) {
