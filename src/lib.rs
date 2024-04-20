@@ -550,20 +550,23 @@ mod rust_fn {
                 // Use the actual normalization in a square, not the lazy one, if periodic
                 let normalisation = if periodic {
                     if bincenter <= box_size_x / 2.0 {
-                    4.0 * PI * bincenter * bincenter * binsize * n_particles as f64 / (box_size_x * box_size_y * box_size_z)
-                    // (4 pi r^2  rho dr)
-                    } else if bincenter <= box_size_x / 2.0_f64.sqrt() {
+                        4.0 * PI * bincenter * bincenter * binsize * n_particles as f64 / (box_size_x * box_size_y * box_size_z)
+                        // (4 pi r^2  rho dr)
+                    } else if bincenter <= box_size_x / (2.0_f64.sqrt()) {
                         binsize * n_particles as f64 / (box_size_x * box_size_y * box_size_z)
                             * 2.0
                             * bincenter
                             * PI
-                            * (3.0 * box_size_x - 4.0 * bincenter) // rho dr * 2 r * pi * ( 3 L - 4 r)
+                            * (3.0 * box_size_x - 4.0 * bincenter) 
+                            // rho dr * 2 r * pi * ( 3 L - 4 r)
                     } else {
                         binsize * n_particles as f64 / (box_size_x * box_size_y * box_size_z)
                         * 2.0
                         * bincenter
-                        * ( 2.0 * PI * bincenter - 3.0 * PI * box_size_x + 12.0 * bincenter * (1.0 / (1.0 - 4.0 * bincenter * bincenter / (box_size_x * box_size_x))).acos() + 12.0 * box_size_x * (1.0 / (4.0 * bincenter * bincenter / (box_size_x * box_size_x) - 1.0).sqrt()).acos())
-                        // rho dr * 2 r * ( 2 pi r - 3 pi L + 12 r acos(1/(1-4 r^2 / L^2)) + 12 L acos(1/sqrt(4r^2/L^2 -1)) )
+                        * ( 3.0 * PI * box_size_x - 4.0 * PI * bincenter
+                            + 12.0 * bincenter * (1.0 / (4.0 * bincenter * bincenter / (box_size_x * box_size_x) - 1.0)).acos() 
+                            - 12.0 * box_size_x * (1.0 / (4.0 * bincenter * bincenter / (box_size_x * box_size_x) - 1.0).sqrt()).acos())
+                        // rho dr * 2 r * ( 3 pi l - 4 pi r + 12 r acos(1/(1-4 r^2 / L^2)) - 12 L acos(1/sqrt(4r^2/L^2 -1)) )
                     }
                 } else {
                     4.0 * PI * bincenter * bincenter * binsize * n_particles as f64 / (box_size_x * box_size_y * box_size_z)
