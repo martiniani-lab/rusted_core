@@ -42,6 +42,8 @@ periodic = False
 connected = False
 logscaleplot = False
 
+print(f"Found {npoints} points in {ndim}d")
+
 if ndim == 2:
     
     boop_orders = np.array([6])
@@ -66,10 +68,33 @@ if ndim == 2:
     
     radial_rdf, corr = rust.compute_radial_correlations_2d(points, translational, boxsize, binsize, periodic, connected)
 
-    print(radial_rdf.shape)
-    # print(g7.shape)
 elif ndim == 3:
-    print("Not implemented in 3d for now")
+    
+    dummy = np.ones(points.shape[0]).reshape(-1,1)
+    
+    radial_rdf, _ = rust.compute_radial_correlations_3d(points, dummy, boxsize, binsize, periodic, connected)
+    
+    nbins = radial_rdf.shape[0]
+    bins = (np.arange(0, nbins) + 0.5)*binsize
+    print(bins.shape)
+
+    if connected:
+        suffix = "_connected"
+    else:
+        suffix = ""
+    
+    np.savetxt(file_name+"_radial_rdf.csv", np.vstack([bins,radial_rdf]).T)
+    fig = plt.figure()#figsize=(10,10))
+    ax = fig.gca()
+    pc = ax.plot(bins, radial_rdf,c=cmr.ember(0.5))
+    ax.tick_params(labelsize=18)
+    ax.set_xlabel(r"$r$",fontsize=18)
+    ax.set_ylabel(r"$g(r)$",fontsize=18)
+    plt.savefig(file_name+"_radial_rdf.png", bbox_inches = 'tight',pad_inches = 0, dpi = 300)
+    plt.close()
+    
+    sys.exit()
+    
 else: 
     print("Wrong dimensionality!")
     
@@ -91,7 +116,6 @@ radial_rdf = data[:,1]
 
 fig = plt.figure()#figsize=(10,10))
 ax = fig.gca()
-pc = ax.plot(bins, radial_rdf,c=cmr.ember(0.5))
 ax.set_xlim(0,0.5)
 pc = ax.plot(bins, radial_rdf,c=cmr.ember(0.5))
 ax.tick_params(labelsize=18)

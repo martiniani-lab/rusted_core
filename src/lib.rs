@@ -87,6 +87,33 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     }
     
     #[pyfn(m)]
+    fn compute_radial_correlations_3d<'py>(
+        py: Python<'py>,
+        points: &PyArrayDyn<f64>,
+        field: &PyArrayDyn<f64>,
+        box_size: f64,
+        binsize: f64,
+        periodic: bool,
+        connected: bool
+    ) -> (& 'py PyArray1<f64>, & 'py PyArray<f64, Dim<[usize;2]>>) {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+        let field_array = unsafe { field.as_array()}; // Same for field
+        let field_shape = field_array.shape(); // Need to feed npoints x fielddim values
+        
+        assert!(field_shape[0] == array.shape()[0], "You must provide as many field lines as particles!");
+
+        // Mutate the data
+        // No need to return any value as the input data is mutated
+        let (rdf, field_corrs) = rust_fn::compute_radial_correlations_3d(&array, &field_array, box_size, box_size, box_size, binsize, periodic, connected);
+        let array_rdf =  PyArray::from_vec(py, rdf);
+        let pyarray_field_corrs = PyArray::from_owned_array(py, field_corrs);
+        
+        return(array_rdf, pyarray_field_corrs)
+    }
+    
+    #[pyfn(m)]
     fn compute_2d_boops<'py>(
         py: Python<'py>,
         points: &PyArrayDyn<f64>,
@@ -303,6 +330,25 @@ mod rust_fn {
         }
     }
     
+    pub fn ensure_periodicity_3d(v: &mut Vec<f64>, box_size_x: f64, box_size_y: f64, box_size_z: f64) {
+        if v[0] > box_size_x * 0.5 {
+            v[0] -= box_size_x;
+        } else if v[0] <= -box_size_x * 0.5 {
+            v[0] += box_size_x;
+        }
+    
+        if v[1] > box_size_y * 0.5 {
+            v[1] -= box_size_y;
+        } else if v[1] <= -box_size_y * 0.5 {
+            v[1] += box_size_y;
+        }
+        
+        if v[2] > box_size_z * 0.5 {
+            v[2] -= box_size_z;
+        } else if v[2] <= -box_size_z * 0.5 {
+            v[2] += box_size_z;
+        }
+    }
     
     pub fn compute_radial_correlations_2d(
         points: &ArrayViewD<'_, f64>,
@@ -324,7 +370,6 @@ mod rust_fn {
         let field_dim = fields.shape()[1];
         let max_dist = if periodic {hypot(box_size_x / 2.0, box_size_y / 2.0)} else {hypot(box_size_x, box_size_y)};
         let nbins = (max_dist / binsize).ceil() as usize;
-        let max_dist = if periodic {hypot(box_size_x / 2.0, box_size_y / 2.0)} else {hypot(box_size_x, box_size_y)};
         let rdf: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
         let field_corrs: Vec<Vec<Arc<RwLock<f64>>>> = vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); field_dim]; nbins];
 
@@ -420,6 +465,126 @@ mod rust_fn {
         
     }
     
+    
+    pub fn compute_radial_correlations_3d(
+        points: &ArrayViewD<'_, f64>,
+        fields: &ArrayViewD<'_, f64>,
+        box_size_x: f64,
+        box_size_y: f64,
+        box_size_z: f64,
+        binsize: f64,
+        periodic: bool,
+        connected: bool
+    ) -> (Vec<f64>, Array<f64, Dim<[usize; 2]>>) {
+        // Check that the binsize is physical
+        assert!(
+            binsize > 0.0,
+            "Something is wrong with the binsize used for the RDF"
+        );
+
+        // get the needed parameters from the input
+        let n_particles = points.shape()[0];
+        let field_dim = fields.shape()[1];
+        let max_dist = if periodic {hypot(hypot(box_size_x / 2.0, box_size_y / 2.0), box_size_z/2.0)} else {hypot(hypot(box_size_x, box_size_y),box_size_z)};
+        let nbins = (max_dist / binsize).ceil() as usize;
+        let rdf: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
+        let field_corrs: Vec<Vec<Arc<RwLock<f64>>>> = vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); field_dim]; nbins];
+
+        // compute the mean values of the quantities used in correlations
+        let mut mean_field: Vec<f64> = vec_no_clone![0.0; field_dim];
+        for dim in 0..field_dim {
+            mean_field[dim] = fields.slice(s![.., dim]).into_par_iter().sum();
+        }
+        for dim in 0..field_dim {
+            mean_field[dim] /= n_particles as f64;
+        }
+        
+        // go through all pairs just once for all correlations and compute both rdf and the correlation
+        let counts: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
+        (0..n_particles).into_par_iter().for_each(|i| {
+            for j in i + 1..n_particles {
+                
+                let xi = points[[i, 0]];
+                let xj = points[[j, 0]];
+                let yi = points[[i, 1]];
+                let yj = points[[j, 1]];
+                let zi = points[[i, 2]];
+                let zj = points[[j, 2]];
+                
+                let mut r_ij = vec![xj - xi, yj - yi, zj - zi];
+                if periodic {
+                    ensure_periodicity_3d(&mut r_ij, box_size_x, box_size_y, box_size_z);
+                }
+                let dist_ij = hypot(hypot(r_ij[0], r_ij[1]),r_ij[2]);
+                assert!(
+                    dist_ij >= 0.0 && dist_ij < max_dist,
+                    "Something is wrong with the distance between particles!"
+                );
+
+                // determine the relevant bin, and update the count at that bin for g(r)
+                let index = (dist_ij / binsize).floor() as usize;
+                *(counts[index].write().unwrap()) += 1.0;
+
+                // Also compute the field correlation
+                for k in 0..field_dim {
+                    if connected {
+                        *(field_corrs[index][k].write().unwrap()) += (fields[[i,k]] - mean_field[k]) * (fields[[j,k]] - mean_field[k]);
+                    } else {
+                        *(field_corrs[index][k].write().unwrap()) += fields[[i,k]] * fields[[j,k]];
+                    }
+                }
+            }
+        });
+
+        (0..nbins).into_par_iter().for_each(|bin| {
+            
+            // normalise the values of the correlations by counts
+            let current_count = *counts[bin].read().unwrap();
+            if current_count != 0.0 {
+                for k in 0..field_dim {
+                    *(field_corrs[bin][k].write().unwrap()) /= current_count;
+                }
+
+                // THEN only, compute the rdf from counts
+                let bincenter = (bin as f64 + 0.5) * binsize;
+                // Use the actual normalization in a square, not the lazy one, if periodic
+                let normalisation = if periodic {
+                    if bincenter <= box_size_x / 2.0 {
+                    4.0 * PI * bincenter * bincenter * binsize * n_particles as f64 / (box_size_x * box_size_y * box_size_z)
+                    // (4 pi r^2  rho dr)
+                    } else if bincenter <= box_size_x / 2.0_f64.sqrt() {
+                        binsize * n_particles as f64 / (box_size_x * box_size_y * box_size_z)
+                            * 2.0
+                            * bincenter
+                            * PI
+                            * (3.0 * box_size_x - 4.0 * bincenter) // rho dr * 2 r * pi * ( 3 L - 4 r)
+                    } else {
+                        binsize * n_particles as f64 / (box_size_x * box_size_y * box_size_z)
+                        * 2.0
+                        * bincenter
+                        * ( 2.0 * PI * bincenter - 3.0 * PI * box_size_x + 12.0 * bincenter * (1.0 / (1.0 - 4.0 * bincenter * bincenter / (box_size_x * box_size_x))).acos() + 12.0 * box_size_x * (1.0 / (4.0 * bincenter * bincenter / (box_size_x * box_size_x) - 1.0).sqrt()).acos())
+                        // rho dr * 2 r * ( 2 pi r - 3 pi L + 12 r acos(1/(1-4 r^2 / L^2)) + 12 L acos(1/sqrt(4r^2/L^2 -1)) )
+                    }
+                } else {
+                    4.0 * PI * bincenter * bincenter * binsize * n_particles as f64 / (box_size_x * box_size_y * box_size_z)
+                    // (4 pi r^2  rho dr)
+                };
+                *(rdf[bin].write().unwrap()) = current_count / (n_particles as f64 * normalisation / 2.0); // the number of count is 1/ averaged over N 2/ normalised by the uniform case 3/ divided by two because pairs are counted once only
+            }
+        });
+        
+        let mut rdf_vector = vec![0.0; nbins];
+        let mut field_corrs_vector = Array::<f64, _>::zeros((nbins, field_dim).f());
+        for bin in 0..nbins {
+            rdf_vector[bin] =  *rdf.get(bin).unwrap().read().unwrap();
+            for dim in 0..field_dim {
+                field_corrs_vector[[bin,dim]] = *field_corrs.get(bin).unwrap().get(dim).unwrap().read().unwrap();
+            }
+        }
+        
+        return (rdf_vector, field_corrs_vector)
+        
+    }
     
     
     pub fn compute_steinhardt_boops_2d(
