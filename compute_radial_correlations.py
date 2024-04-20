@@ -30,8 +30,6 @@ else:
     print("Wrong file format")
     sys.exit()
 
-points = np.random.rand(10000,3)
-
 ndim = points.shape[1]
 npoints = points.shape[0]
 
@@ -40,7 +38,7 @@ points /= points.max()
 boxsize = 1.0
 radius = boxsize / (npoints)**(1.0/ndim)
 binsize = radius / 20.0
-periodic = True
+periodic = False
 connected = False
 logscaleplot = False
 
