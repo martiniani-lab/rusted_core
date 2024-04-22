@@ -53,10 +53,11 @@ if ndim == 2:
     
     _, gboop = rust.compute_radial_correlations_2d(points, boops[:,-1,:], boxsize, binsize, periodic,connected)
     
+    order = 200
     nK =100
     peak_angle = 0
-    nK = 82.3286
-    peak_angle = 2*np.pi/6.0 *  (2.27)/(2.0*np.pi)
+    # nK = 82.3286
+    # peak_angle = 2*np.pi/6.0 *  (2.27)/(2.0*np.pi)
     K = 2.0 * np.pi * nK / boxsize
     exponent = K * points[:,0] * np.cos(peak_angle) + K * points[:,1] * np.sin(peak_angle)
     
@@ -67,6 +68,7 @@ if ndim == 2:
     np.savetxt(file_name+"_translational_"+str(nK)+".csv", translational)
     
     radial_rdf, corr = rust.compute_radial_correlations_2d(points, translational, boxsize, binsize, periodic, connected)
+    _, or_corr = rust.compute_radial_orientation_corr_2d(points, boxsize, binsize, periodic, order)
 
 elif ndim == 3:
     
@@ -138,6 +140,21 @@ ax = fig.gca()
 pc = ax.plot(bins, gboop[:,0]+gboop[:,1])
 ax.set_xlim(0,0.5)
 plt.savefig(file_name+"_radial_gboop"+suffix+".png", dpi = 300)
+plt.close()
+
+fig = plt.figure(figsize=(10,10))
+ax = fig.gca()
+pc = ax.plot(bins, np.sqrt(or_corr[:,0]**2+or_corr[:,1]**2))
+ax.set_xlim(0,0.5)
+plt.savefig(file_name+"_radial_orcorr.png", dpi = 300)
+plt.close()
+
+fig = plt.figure(figsize=(10,10))
+ax = fig.gca()
+pc = ax.plot(bins, np.sqrt(or_corr[:,0]**2+or_corr[:,1]**2)/np.where(radial_rdf == 0, 1, bins * radial_rdf))
+ax.set_xlim(0,0.5)
+ax.set_ylim(0,1)
+plt.savefig(file_name+"_radial_orcorr_normalizationtests.png", dpi = 300)
 plt.close()
 
 np.savetxt(file_name+"_boop"+str(boop_orders[-1])+"_test.csv", np.vstack([boops[:,-1,0],boops[:,-1,1]]).T)

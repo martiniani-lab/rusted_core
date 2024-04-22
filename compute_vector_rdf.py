@@ -46,14 +46,14 @@ points *= 0.5
 ndim = points.shape[1]
 npoints = points.shape[0]
 
-order = 200
+order = 100
 
 boxsize = 1.0
 radius = boxsize / (npoints)**(1.0/ndim)
 binsize = radius / 20.0
 periodic = False
 logscaleplot = False
-vmaxmax = 10
+vmaxmax = 2
 
 if ndim == 2:
     # vector_rdf = rust.compute_vector_rdf2d(points, boxsize, binsize, periodic)
@@ -91,8 +91,9 @@ else:
 nbins = np.ceil(boxsize/binsize)
 rho_n = npoints * npoints / ( boxsize * boxsize)
 vector_rdf /= rho_n * binsize * binsize
+vector_orientation /= rho_n * binsize * binsize
 
-vector_orientation = np.sum(vector_orientation,axis=-1)
+vector_orientation = np.sum(vector_orientation**2,axis=-1)
     
 np.savetxt(file_name+"vector_rdf_test.csv", vector_rdf)
 np.savetxt(file_name+"vector_orientation_test.csv", vector_orientation)
@@ -128,7 +129,7 @@ if logscaleplot:
     pc = ax.imshow(vector_orientation[center-width:center+width+1, center-width:center+width+1],norm=clr.LogNorm(vmin=1e-3,vmax=1e1), cmap=cmr.ember)
 else:
     vmax = np.min([vector_orientation.max(), vmaxmax])
-    pc = ax.imshow(vector_orientation[center-width:center+width+1, center-width:center+width+1], vmin = 0, vmax = vmax, cmap=cmr.ember)
+    pc = ax.imshow(vector_orientation[center-width:center+width+1, center-width:center+width+1], vmin = 0, vmax = None, cmap=cmr.ember)
 fig.colorbar(pc)
 plt.savefig(file_name+"_vector_orientation_test.png", dpi = 300)
 plt.close()

@@ -107,6 +107,28 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     }
     
     #[pyfn(m)]
+    fn compute_radial_orientation_corr_2d<'py>(
+        py: Python<'py>,
+        points: &PyArrayDyn<f64>,
+        box_size: f64,
+        binsize: f64,
+        periodic: bool,
+        order: u64
+    ) -> (& 'py PyArray1<f64>, & 'py PyArray<f64, Dim<[usize;2]>>) {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+
+        // Mutate the data
+        // No need to return any value as the input data is mutated
+        let (rdf, radial_corr) = rust_fn::compute_radial_orientation_corr_2d(&array, box_size, box_size, binsize, periodic, order);
+        let array_rdf =  PyArray::from_vec(py, rdf);
+        let array_corr =  PyArray::from_owned_array(py, radial_corr);
+        
+        return (array_rdf, array_corr)
+    }
+    
+    #[pyfn(m)]
     fn compute_radial_correlations_3d<'py>(
         py: Python<'py>,
         points: &PyArrayDyn<f64>,
@@ -329,6 +351,7 @@ mod rust_fn {
                 rdf_vector[i][j] = *rdf.get(i).unwrap().get(j).unwrap().read().unwrap();
                 for dim in 0..2 {
                     corr_vector[[i,j,dim]] = *corr.get(i).unwrap().get(j).unwrap().get(dim).unwrap().read().unwrap();
+                    corr_vector[[i,j,dim]] /= 2.0 * PI;
                 }
             }
         }
@@ -552,6 +575,103 @@ mod rust_fn {
         for bin in 0..nbins {
             rdf_vector[bin] =  *rdf.get(bin).unwrap().read().unwrap();
             for dim in 0..field_dim {
+                field_corrs_vector[[bin,dim]] = *field_corrs.get(bin).unwrap().get(dim).unwrap().read().unwrap();
+            }
+        }
+        
+        return (rdf_vector, field_corrs_vector)
+        
+    }
+    
+    pub fn compute_radial_orientation_corr_2d(
+        points: &ArrayViewD<'_, f64>,
+        box_size_x: f64,
+        box_size_y: f64,
+        binsize: f64,
+        periodic: bool,
+        order: u64
+    ) -> (Vec<f64>, Array<f64, Dim<[usize; 2]>>) {
+        // Check that the binsize is physical
+        assert!(
+            binsize > 0.0,
+            "Something is wrong with the binsize used for the RDF"
+        );
+
+        // get the needed parameters from the input
+        let n_particles = points.shape()[0];
+        let max_dist = if periodic {hypot(box_size_x / 2.0, box_size_y / 2.0)} else {hypot(box_size_x, box_size_y)};
+        let nbins = (max_dist / binsize).ceil() as usize;
+        let rdf: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
+        let field_corrs: Vec<Vec<Arc<RwLock<f64>>>> = vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); 2]; nbins];
+        
+        // go through all pairs just once for all correlations and compute both rdf and the correlation
+        let counts: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
+        (0..n_particles).into_par_iter().for_each(|i| {
+            for j in i + 1..n_particles {
+                
+                let xi = points[[i, 0]];
+                let xj = points[[j, 0]];
+                let yi = points[[i, 1]];
+                let yj = points[[j, 1]];
+                
+                let mut r_ij = vec![xj - xi, yj - yi];
+                if periodic {
+                    ensure_periodicity(&mut r_ij, box_size_x, box_size_y);
+                }
+                let dist_ij = hypot(r_ij[0], r_ij[1]);
+                assert!(
+                    dist_ij >= 0.0 && dist_ij < max_dist,
+                    "Something is wrong with the distance between particles!"
+                );
+
+                // determine the relevant bin, and update the count at that bin for g(r)
+                let index = (dist_ij / binsize).floor() as usize;
+                *(counts[index].write().unwrap()) += 1.0;
+
+                // Also compute the field correlation
+                let theta_ij = atan2(r_ij[1],r_ij[0]);
+                let angle = order as f64 * theta_ij;
+                *(field_corrs[index][0].write().unwrap()) += angle.cos();
+                *(field_corrs[index][1].write().unwrap()) += angle.sin();
+
+            }
+        });
+
+        (0..nbins).into_par_iter().for_each(|bin| {
+            
+            // normalise the values of the correlations by counts
+            let current_count = *counts[bin].read().unwrap();
+            if current_count != 0.0 {
+
+                // THEN only, compute the rdf from counts
+                let bincenter = (bin as f64 + 0.5) * binsize;
+                // Use the actual normalization in a square, not the lazy one, if periodic
+                let normalisation = if periodic {
+                    if bincenter <= box_size_x / 2.0 {
+                    2.0 * PI * bincenter * binsize * n_particles as f64 / (box_size_x * box_size_y)
+                    // (2 pi r  rho dr)
+                    } else {
+                        binsize * n_particles as f64 / (box_size_x * box_size_y)
+                            * 2.0
+                            * bincenter
+                            * (PI - 4.0 * (0.5 * box_size_x / bincenter).acos()) // rho dr * 2 r *( pi - 4 acos(L/2r))
+                    }
+                } else {
+                    2.0 * PI * bincenter * binsize * n_particles as f64 / (box_size_x * box_size_y)
+                    // (2 pi r  rho dr)
+                };
+                *(rdf[bin].write().unwrap()) = current_count / (n_particles as f64 * normalisation / 2.0); // the number of count is 1/ averaged over N 2/ normalised by the uniform case 3/ divided by two because pairs are counted once only
+                // The orientational order is just a Fourier mode of g, not an actual correlation function of a microscopic observable!
+                *(field_corrs[bin][0].write().unwrap()) /= 2.0 * PI * (n_particles as f64 * normalisation / 2.0);
+                *(field_corrs[bin][1].write().unwrap()) /= 2.0 * PI * (n_particles as f64 * normalisation / 2.0);
+            }
+        });
+        
+        let mut rdf_vector = vec![0.0; nbins];
+        let mut field_corrs_vector = Array::<f64, _>::zeros((nbins, 2).f());
+        for bin in 0..nbins {
+            rdf_vector[bin] =  *rdf.get(bin).unwrap().read().unwrap();
+            for dim in 0..2 {
                 field_corrs_vector[[bin,dim]] = *field_corrs.get(bin).unwrap().get(dim).unwrap().read().unwrap();
             }
         }
