@@ -17,3 +17,5 @@ rayon = "*"
 spade = '*'
 ang = '*'
 libm = '*'
+geo = '*'
+itertools = '*'
