@@ -74,7 +74,7 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
         // No need to return any value as the input data is mutated
         let (vector_rdf, vector_corr) =
             rust_fn::compute_vector_orientation_corr_2d(&array, box_size, binsize, periodic, order);
-        let array_rdf = PyArray2::from_vec2(py, &vector_rdf).unwrap();
+        let array_rdf = PyArray2::from_owned_array(py, vector_rdf);
         let array_corr = PyArray::from_owned_array(py, vector_corr);
 
         return (array_rdf, array_corr);
@@ -315,7 +315,7 @@ mod rust_fn {
         binsize: f64,
         periodic: bool,
         order: u64,
-    ) -> (Vec<Vec<f64>>, Array<f64, Dim<[usize; 3]>>) {
+    ) -> (Array<f64, Dim<[usize; 2]>>, Array<f64, Dim<[usize; 3]>>) {
         let npoints = points.shape()[0];
         let ndim = points.shape()[1];
         println!("Found {:?} points in d = {:?}", npoints, ndim);
@@ -336,7 +336,7 @@ mod rust_fn {
         binsize: f64,
         periodic: bool,
         order: u64,
-    ) -> (Vec<Vec<f64>>, Array<f64, Dim<[usize; 3]>>) {
+    ) -> (Array<f64, Dim<[usize; 2]>>, Array<f64, Dim<[usize; 3]>>) {
         // Check that the binsize is physical
         assert!(
             binsize > 0.0,
@@ -390,19 +390,17 @@ mod rust_fn {
             }
         });
 
-        let mut rdf_vector = vec![vec![0.0; nbins]; nbins];
+        let mut rdf_vector = Array::<f64, _>::zeros((nbins, nbins).f());
         let mut corr_vector = Array::<f64, _>::zeros((nbins, nbins, 2).f());
         
-        rdf_vector.par_iter_mut().enumerate().for_each(|(i, rdf_i)| {
-            for j in 0..nbins {
-                rdf_i[j] = *rdf
-                    .get(i)
-                    .unwrap()
-                    .get(j)
-                    .unwrap()
-                    .read()
-                    .unwrap();
-            }
+        Zip::indexed(&mut rdf_vector).par_for_each(|(i, j), rdf_val| {
+            *rdf_val = *rdf
+            .get(i)
+            .unwrap()
+            .get(j)
+            .unwrap()
+            .read()
+            .unwrap();
         });
         
         // https://docs.rs/ndarray/latest/ndarray/struct.Zip.html
@@ -418,6 +416,7 @@ mod rust_fn {
             .read()
             .unwrap();
         });
+        
         return (rdf_vector, corr_vector);
     }
 
