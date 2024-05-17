@@ -215,7 +215,7 @@ mod rust_fn {
     use ang::atan2;
     use libm::hypot;
     use ndarray::parallel::prelude::*;
-    use ndarray::{s, Array, Axis, Dim, ShapeBuilder};
+    use ndarray::{s, Array, Axis, Dim, ShapeBuilder, Zip};
     use numpy::ndarray::ArrayViewD;
     use std::f64::consts::PI;
     use std::sync::{Arc, RwLock};
@@ -405,24 +405,19 @@ mod rust_fn {
             }
         });
         
-        corr_vector.axis_iter_mut(Axis(0)).into_par_iter().enumerate().for_each(| (i, mut corr_vector_i)| {
-            for j in 0..nbins{
-                for dim in 0..2 {
-                    corr_vector_i[[j,dim]] = *corr
-                    .get(i)
-                    .unwrap()
-                    .get(j)
-                    .unwrap()
-                    .get(dim)
-                    .unwrap()
-                    .read()
-                    .unwrap();
-                    corr_vector_i[[j, dim]] /= 2.0 * PI;
-                }
-            }
+        // https://docs.rs/ndarray/latest/ndarray/struct.Zip.html
+        // https://stackoverflow.com/questions/75824934/parallel-computation-of-values-for-ndarray-array2f64-in-rust
+        Zip::indexed(&mut corr_vector).par_for_each(|(i, j, dim), corr_val| {
+            *corr_val = *corr
+            .get(i)
+            .unwrap()
+            .get(j)
+            .unwrap()
+            .get(dim)
+            .unwrap()
+            .read()
+            .unwrap();
         });
-
-
         return (rdf_vector, corr_vector);
     }
 
