@@ -300,11 +300,11 @@ mod rust_fn {
         });
 
         let mut rdf_vector = vec![vec![0.0; nbins]; nbins];
-        for i in 0..nbins {
+        rdf_vector.par_iter_mut().enumerate().for_each(| (i, rdf_vector_i)| {
             for j in 0..nbins {
-                rdf_vector[i][j] = *rdf.get(i).unwrap().get(j).unwrap().read().unwrap();
+                rdf_vector_i[j] = *rdf.get(i).unwrap().get(j).unwrap().read().unwrap();
             }
-        }
+        });
 
         return rdf_vector;
     }
@@ -392,23 +392,36 @@ mod rust_fn {
 
         let mut rdf_vector = vec![vec![0.0; nbins]; nbins];
         let mut corr_vector = Array::<f64, _>::zeros((nbins, nbins, 2).f());
-        for i in 0..nbins {
+        
+        rdf_vector.par_iter_mut().enumerate().for_each(|(i, rdf_i)| {
             for j in 0..nbins {
-                rdf_vector[i][j] = *rdf.get(i).unwrap().get(j).unwrap().read().unwrap();
+                rdf_i[j] = *rdf
+                    .get(i)
+                    .unwrap()
+                    .get(j)
+                    .unwrap()
+                    .read()
+                    .unwrap();
+            }
+        });
+        
+        corr_vector.axis_iter_mut(Axis(0)).into_par_iter().enumerate().for_each(| (i, mut corr_vector_i)| {
+            for j in 0..nbins{
                 for dim in 0..2 {
-                    corr_vector[[i, j, dim]] = *corr
-                        .get(i)
-                        .unwrap()
-                        .get(j)
-                        .unwrap()
-                        .get(dim)
-                        .unwrap()
-                        .read()
-                        .unwrap();
-                    corr_vector[[i, j, dim]] /= 2.0 * PI;
+                    corr_vector_i[[j,dim]] = *corr
+                    .get(i)
+                    .unwrap()
+                    .get(j)
+                    .unwrap()
+                    .get(dim)
+                    .unwrap()
+                    .read()
+                    .unwrap();
+                    corr_vector_i[[j, dim]] /= 2.0 * PI;
                 }
             }
-        }
+        });
+
 
         return (rdf_vector, corr_vector);
     }
@@ -485,11 +498,12 @@ mod rust_fn {
             }
         });
 
+        // Could make this an array and actually parallelize over all dimensions
         let mut rdf_vector = vec![vec![vec![0.0; nbins]; nbins]; nbins];
-        for i in 0..nbins {
+        rdf_vector.par_iter_mut().enumerate().for_each(|(i, rdf_i)| {
             for j in 0..nbins {
                 for k in 0..nbins {
-                    rdf_vector[i][j][k] = *rdf
+                    rdf_i[j][k] = *rdf
                         .get(i)
                         .unwrap()
                         .get(j)
@@ -500,7 +514,7 @@ mod rust_fn {
                         .unwrap();
                 }
             }
-        }
+        });
 
         return rdf_vector;
     }
@@ -656,18 +670,25 @@ mod rust_fn {
 
         let mut rdf_vector = vec![0.0; nbins];
         let mut field_corrs_vector = Array::<f64, _>::zeros((nbins, field_dim).f());
-        for bin in 0..nbins {
-            rdf_vector[bin] = *rdf.get(bin).unwrap().read().unwrap();
+        
+                
+        field_corrs_vector
+        .axis_iter_mut(Axis(0))
+        .into_par_iter()
+        .zip(rdf_vector.par_iter_mut())
+        .enumerate()
+        .for_each(|(bin, (mut field_bin, rdf_vector_bin))| {
+            *rdf_vector_bin = *rdf.get(bin).unwrap().read().unwrap();
             for dim in 0..field_dim {
-                field_corrs_vector[[bin, dim]] = *field_corrs
-                    .get(bin)
-                    .unwrap()
-                    .get(dim)
-                    .unwrap()
-                    .read()
-                    .unwrap();
+                field_bin[dim] = *field_corrs
+                .get(bin)
+                .unwrap()
+                .get(dim)
+                .unwrap()
+                .read()
+                .unwrap();
             }
-        }
+        });
 
         return (rdf_vector, field_corrs_vector);
     }
@@ -764,18 +785,24 @@ mod rust_fn {
 
         let mut rdf_vector = vec![0.0; nbins];
         let mut field_corrs_vector = Array::<f64, _>::zeros((nbins, 2).f());
-        for bin in 0..nbins {
-            rdf_vector[bin] = *rdf.get(bin).unwrap().read().unwrap();
+        
+        field_corrs_vector
+        .axis_iter_mut(Axis(0))
+        .into_par_iter()
+        .zip(rdf_vector.par_iter_mut())
+        .enumerate()
+        .for_each(|(bin, (mut field_bin, rdf_vector_bin))| {
+            *rdf_vector_bin = *rdf.get(bin).unwrap().read().unwrap();
             for dim in 0..2 {
-                field_corrs_vector[[bin, dim]] = *field_corrs
-                    .get(bin)
-                    .unwrap()
-                    .get(dim)
-                    .unwrap()
-                    .read()
-                    .unwrap();
+                field_bin[dim] = *field_corrs
+                .get(bin)
+                .unwrap()
+                .get(dim)
+                .unwrap()
+                .read()
+                .unwrap();
             }
-        }
+        });
 
         return (rdf_vector, field_corrs_vector);
     }
@@ -913,18 +940,24 @@ mod rust_fn {
 
         let mut rdf_vector = vec![0.0; nbins];
         let mut field_corrs_vector = Array::<f64, _>::zeros((nbins, field_dim).f());
-        for bin in 0..nbins {
-            rdf_vector[bin] = *rdf.get(bin).unwrap().read().unwrap();
+        
+        field_corrs_vector
+        .axis_iter_mut(Axis(0))
+        .into_par_iter()
+        .zip(rdf_vector.par_iter_mut())
+        .enumerate()
+        .for_each(|(bin, (mut field_bin, rdf_vector_bin))| {
+            *rdf_vector_bin = *rdf.get(bin).unwrap().read().unwrap();
             for dim in 0..field_dim {
-                field_corrs_vector[[bin, dim]] = *field_corrs
-                    .get(bin)
-                    .unwrap()
-                    .get(dim)
-                    .unwrap()
-                    .read()
-                    .unwrap();
+                field_bin[dim] = *field_corrs
+                .get(bin)
+                .unwrap()
+                .get(dim)
+                .unwrap()
+                .read()
+                .unwrap();
             }
-        }
+        });
 
         return (rdf_vector, field_corrs_vector);
     }
