@@ -271,6 +271,8 @@ mod rust_fn {
         } else {
             2 * (box_size_x / binsize).ceil() as usize
         };
+        
+        let box_lengths = vec![box_size_x, box_size_y];
 
         let n_particles = points.shape()[0];
         let rdf: Vec<Vec<Arc<RwLock<f64>>>> =
@@ -285,7 +287,7 @@ mod rust_fn {
 
                 let mut r_ij = vec![xj - xi, yj - yi];
                 if periodic {
-                    ensure_periodicity(&mut r_ij, box_size_x, box_size_y);
+                    ensure_periodicity(&mut r_ij, &box_lengths);
                 }
 
                 // determine the relevant bin, and update the count at that bin
@@ -353,6 +355,8 @@ mod rust_fn {
         } else {
             2 * (box_size_x / binsize).ceil() as usize
         };
+        
+        let box_lengths = vec![box_size_x, box_size_y];
 
         let n_particles = points.shape()[0];
         let rdf: Vec<Vec<Arc<RwLock<f64>>>> =
@@ -368,7 +372,7 @@ mod rust_fn {
 
                 let mut r_ij = vec![xj - xi, yj - yi];
                 if periodic {
-                    ensure_periodicity(&mut r_ij, box_size_x, box_size_y);
+                    ensure_periodicity(&mut r_ij, &box_lengths);
                 }
 
                 // determine the relevant bin, and update the count at that bin
@@ -463,6 +467,8 @@ mod rust_fn {
         } else {
             2 * (box_size_x / binsize).ceil() as usize
         };
+        
+        let box_lengths = vec![box_size_x, box_size_y, box_size_z];
 
         let n_particles = points.shape()[0];
         let rdf: Vec<Vec<Vec<Arc<RwLock<f64>>>>> = vec_no_clone![vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; nbins]; nbins];
@@ -478,7 +484,7 @@ mod rust_fn {
 
                 let mut r_ij = vec![xj - xi, yj - yi, zj - zi];
                 if periodic {
-                    ensure_periodicity_3d(&mut r_ij, box_size_x, box_size_y, box_size_z);
+                    ensure_periodicity(&mut r_ij, &box_lengths);
                 }
 
                 // determine the relevant bin, and update the count at that bin
@@ -514,43 +520,17 @@ mod rust_fn {
         return rdf_vector;
     }
 
-    pub fn ensure_periodicity(v: &mut Vec<f64>, box_size_x: f64, box_size_y: f64) {
-        if v[0] > box_size_x * 0.5 {
-            v[0] -= box_size_x;
-        } else if v[0] <= -box_size_x * 0.5 {
-            v[0] += box_size_x;
-        }
-
-        if v[1] > box_size_y * 0.5 {
-            v[1] -= box_size_y;
-        } else if v[1] <= -box_size_y * 0.5 {
-            v[1] += box_size_y;
-        }
-    }
-
-    pub fn ensure_periodicity_3d(
-        v: &mut Vec<f64>,
-        box_size_x: f64,
-        box_size_y: f64,
-        box_size_z: f64,
-    ) {
-        if v[0] > box_size_x * 0.5 {
-            v[0] -= box_size_x;
-        } else if v[0] <= -box_size_x * 0.5 {
-            v[0] += box_size_x;
-        }
-
-        if v[1] > box_size_y * 0.5 {
-            v[1] -= box_size_y;
-        } else if v[1] <= -box_size_y * 0.5 {
-            v[1] += box_size_y;
-        }
-
-        if v[2] > box_size_z * 0.5 {
-            v[2] -= box_size_z;
-        } else if v[2] <= -box_size_z * 0.5 {
-            v[2] += box_size_z;
-        }
+    pub fn ensure_periodicity(v: &mut Vec<f64>, box_lengths: &Vec<f64>) {
+        
+        v.iter_mut().zip(box_lengths).for_each(|(coord, box_length)| { 
+            
+            if *coord > box_length * 0.5 {
+                *coord -= box_length;
+            } else if *coord <= -box_length * 0.5 {
+                *coord += box_length;
+            }
+            
+        });
     }
 
     pub fn compute_radial_correlations_2d(
@@ -567,6 +547,8 @@ mod rust_fn {
             binsize > 0.0,
             "Something is wrong with the binsize used for the RDF"
         );
+        
+        let box_lengths = vec![box_size_x, box_size_y];
 
         // get the needed parameters from the input
         let n_particles = points.shape()[0];
@@ -586,11 +568,7 @@ mod rust_fn {
         for dim in 0..field_dim {
             mean_field[dim] = fields.slice(s![.., dim]).into_par_iter().sum();
         }
-        // (0..n_particles).into_par_iter().for_each(|i| {
-        //     for dim in 0..field_dim {
-        //         mean_field[dim] += fields[[i,dim]];
-        //     }
-        // });
+
         for dim in 0..field_dim {
             mean_field[dim] /= n_particles as f64;
         }
@@ -606,7 +584,7 @@ mod rust_fn {
 
                 let mut r_ij = vec![xj - xi, yj - yi];
                 if periodic {
-                    ensure_periodicity(&mut r_ij, box_size_x, box_size_y);
+                    ensure_periodicity(&mut r_ij, &box_lengths);
                 }
                 let dist_ij = hypot(r_ij[0], r_ij[1]);
                 assert!(
@@ -701,6 +679,8 @@ mod rust_fn {
             binsize > 0.0,
             "Something is wrong with the binsize used for the RDF"
         );
+        
+        let box_lengths = vec![box_size_x, box_size_y];
 
         // get the needed parameters from the input
         let n_particles = points.shape()[0];
@@ -725,7 +705,7 @@ mod rust_fn {
 
                 let mut r_ij = vec![xj - xi, yj - yi];
                 if periodic {
-                    ensure_periodicity(&mut r_ij, box_size_x, box_size_y);
+                    ensure_periodicity(&mut r_ij, &box_lengths);
                 }
                 let dist_ij = hypot(r_ij[0], r_ij[1]);
                 assert!(
@@ -817,6 +797,8 @@ mod rust_fn {
             binsize > 0.0,
             "Something is wrong with the binsize used for the RDF"
         );
+        
+        let box_lengths = vec![box_size_x, box_size_y, box_size_z];
 
         // get the needed parameters from the input
         let n_particles = points.shape()[0];
@@ -853,7 +835,7 @@ mod rust_fn {
 
                 let mut r_ij = vec![xj - xi, yj - yi, zj - zi];
                 if periodic {
-                    ensure_periodicity_3d(&mut r_ij, box_size_x, box_size_y, box_size_z);
+                    ensure_periodicity(&mut r_ij, &box_lengths);
                 }
                 let dist_ij = hypot(hypot(r_ij[0], r_ij[1]), r_ij[2]);
                 assert!(
@@ -967,6 +949,8 @@ mod rust_fn {
         // get the needed parameters from the input
         let n_particles = points_array.shape()[0];
         let boop_orders_number = boop_order_array.shape()[0];
+        
+        let box_lengths = vec![box_size_x, box_size_y];
 
         let mut boop_vectors = Array::<f64, _>::zeros((n_particles, boop_orders_number, 2).f());
 
@@ -1029,7 +1013,7 @@ mod rust_fn {
                     let dy = neigh_vertex.y - yi;
                     let mut vector = vec![dx, dy];
                     if periodic {
-                        ensure_periodicity(&mut vector, box_size_x, box_size_y);
+                        ensure_periodicity(&mut vector, &box_lengths);
                     }
 
                     let theta = atan2(vector[1], vector[0]);

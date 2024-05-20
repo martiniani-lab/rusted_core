@@ -33,4 +33,5 @@ This is very much a WIP but the code already supports
 - Add an option to normalize g via the summands.
 - Try to implement a kernel-based version of g to reduce binning issues?
 - Think of other useful functions?
+- Proper front-end with argparse
 - Refactor lib.rs with separate files and classes; possibly make a few functions there a bit more type-agnostic (par_iter permitting).
