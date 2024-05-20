@@ -23,7 +23,7 @@ This is very much a WIP but the code already supports
 - Our long-range orientational correlation in 2d
 
 ### TODO
-- Carry over smarter multithreading for Delaunay quantities and Voronoi cell area statistics from Active Brawnians
+- Carry over Voronoi cell area statistics from Active Brawnians
 - Carry over variance measurements from dedicated library
 - Carry over Steinhardt's 3d BOOPs from hyperalg
 - Add simple functions for nearest-neighbor statistics
