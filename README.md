@@ -23,14 +23,12 @@ This is very much a WIP but the code already supports
 - Our long-range orientational correlation in 2d
 
 ### TODO
-- Carry over Voronoi cell area statistics from Active Brawnians
 - Carry over variance measurements from dedicated library
 - Carry over Steinhardt's 3d BOOPs from hyperalg
-- Add simple functions for nearest-neighbor statistics
 - Add simple functions for k-nearest-neighbor statistics like in my wls files
 - Carry over R-Tree construction from my pattern-matching code for metric neighbor statistics
 - Add simple K-function and/or Fry plots functions?
-- Add an option to normalize g via the summands.
+- Add an option to normalize g via the summands, g(r) = sum (bin / norm(bin)) instead of g(r) = sum(bin) / norm(r).
 - Try to implement a kernel-based version of g to reduce binning issues?
 - Think of other useful functions?
 - Proper front-end with argparse
