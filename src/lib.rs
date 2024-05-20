@@ -199,11 +199,114 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
             &boop_order_array,
             box_size,
             box_size,
-            periodic,
+            periodic
         );
         let array_boops = PyArray::from_array_bound(py, &boops);
 
         return array_boops;
+    }
+    
+    #[pyfn(m)]
+    fn compute_2d_all_voronoi_quantities<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        box_size: f64,
+        periodic: bool
+    ) -> (Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<usize>>, Bound<'py, PyArray1<f64>> ) {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+
+        let (areas, neighbour_counts, nn_distances) = rust_fn::compute_voronoi_quantities_2d(
+            &array,
+            box_size,
+            box_size,
+            periodic,
+            true,
+            true,
+            true
+        );
+        let array_areas = PyArray1::from_vec_bound(py, areas.unwrap());
+        let array_neighbour_counts = PyArray1::from_vec_bound(py, neighbour_counts.unwrap());
+        let array_nn_distances = PyArray1::from_vec_bound(py, nn_distances.unwrap());
+        
+        return (array_areas, array_neighbour_counts, array_nn_distances);
+    }
+    
+    
+    #[pyfn(m)]
+    fn compute_2d_voronoi_areas<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        box_size: f64,
+        periodic: bool
+    ) -> Bound<'py, PyArray1<f64>> {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+
+        let (areas,_,_) = rust_fn::compute_voronoi_quantities_2d(
+            &array,
+            box_size,
+            box_size,
+            periodic,
+            true,
+            false,
+            false
+        );
+        let array_areas = PyArray1::from_vec_bound(py, areas.unwrap());
+        
+        return array_areas;
+    }
+    
+    #[pyfn(m)]
+    fn compute_2d_voronoi_neighbour_numbers<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        box_size: f64,
+        periodic: bool
+    ) -> Bound<'py, PyArray1<usize>> {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+
+        let (_,neighbour_counts,_) = rust_fn::compute_voronoi_quantities_2d(
+            &array,
+            box_size,
+            box_size,
+            periodic,
+            false,
+            true,
+            false
+        );
+        let array_neighbour_counts = PyArray1::from_vec_bound(py, neighbour_counts.unwrap());
+        
+        return array_neighbour_counts;
+    }
+    
+    #[pyfn(m)]
+    fn compute_2d_voronoi_nn_distances<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        box_size: f64,
+        periodic: bool
+    ) -> Bound<'py, PyArray1<f64>> {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+
+        let (_,_,nn_distances) = rust_fn::compute_voronoi_quantities_2d(
+            &array,
+            box_size,
+            box_size,
+            periodic,
+            false,
+            false,
+            true
+        );
+        let array_nn_distances = PyArray1::from_vec_bound(py, nn_distances.unwrap());
+        
+        return array_nn_distances;
     }
 
     Ok(())
@@ -219,6 +322,7 @@ mod rust_fn {
     use ndarray::{s, Array, Axis, Dim, ShapeBuilder, Zip};
     use numpy::ndarray::ArrayViewD;
     use std::f64::consts::PI;
+    use std::f64::INFINITY;
     use std::sync::{Arc, RwLock};
     extern crate spade;
     use spade::internals::FixedHandleImpl;
@@ -1037,5 +1141,173 @@ mod rust_fn {
             });
 
         return boop_vectors;
+    }
+    
+    pub fn compute_voronoi_quantities_2d(
+        points_array: &ArrayViewD<'_, f64>,
+        box_size_x: f64,
+        box_size_y: f64,
+        periodic: bool,
+        voronoi_areas: bool,
+        voronoi_neighbour_count: bool,
+        voronoi_nn_distance: bool
+    ) -> (Option<Vec<f64>>, Option<Vec<usize>>, Option<Vec<f64>>) {
+        // get the needed parameters from the input
+        let n_particles = points_array.shape()[0];
+        
+        let box_lengths = vec![box_size_x, box_size_y];
+
+        let mut areas_vector = vec![0.0; n_particles];
+        let mut neighbour_counts_vector: Vec<usize> = vec![0; n_particles];
+        let mut nn_distances_vector = vec![0.0; n_particles];
+
+        // Enforce periodicity by adding copies.
+        let mut points: Vec<Point2<f64>> = vec![Point2::new(0.0, 0.0); 9 * n_particles];
+
+        points.par_iter_mut().enumerate().for_each(|(i, pointi)| {
+            let index = i % n_particles;
+            let quotient = i / n_particles;
+            let nx = match quotient / 3 {
+                0 => 0.0,
+                1 => -1.0,
+                2 => 1.0,
+                _ => 2.0,
+            };
+            let ny = match quotient % 3 {
+                0 => 0.0,
+                1 => -1.0,
+                2 => 1.0,
+                _ => 2.0,
+            };
+
+            assert!(nx < 2.0 && ny < 2.0, "Unexpected error when cloning boxes.");
+
+            let xi = points_array[[index, 0]];
+            let yi = points_array[[index, 1]];
+
+            let shifted_x: f64 = xi + nx * box_size_x;
+            let shifted_y: f64 = yi + ny * box_size_y;
+
+            let newpoint: Point2<f64> = Point2::new(shifted_x, shifted_y);
+
+            *pointi = newpoint;
+        });
+
+        // Bulk load the points
+        // bulk_load_stable ensures that the ordering of points is conserved, assuming no precise overlap
+        let delaunay = DelaunayTriangulation::<Point2<f64>>::bulk_load_stable(points).unwrap();
+
+        if voronoi_areas {
+            areas_vector.par_iter_mut().enumerate().for_each(|(i, voronoi_area_i)| {
+            // Find polygons, then compute their areas, https://docs.rs/geo/latest/geo/algorithm/area/trait.Area.html
+            let voronoi_polygon: Polygon<f64> =
+            get_centered_voronoi_cell(&delaunay, i);
+            *voronoi_area_i = voronoi_polygon.unsigned_area();
+            });
+        };
+        
+        if voronoi_neighbour_count {
+            neighbour_counts_vector.par_iter_mut().enumerate().for_each(|(i, count_i)| {
+                // In this scenario, the from_index is safe because only the n_particles first values are explored out of 9 times that
+                let fixed_handle = FixedHandleImpl::from_index(i);
+                let dynamic_handle = delaunay.vertex(fixed_handle);
+                let outgoing_edges = dynamic_handle.out_edges();
+                for _e in outgoing_edges {
+                    *count_i += 1;
+                }
+            });
+        }
+        
+        if voronoi_nn_distance {
+            nn_distances_vector.par_iter_mut().enumerate().for_each(|(i, distance_i)| {
+                // In this scenario, the from_index is safe because only the n_particles first values are explored out of 9 times that
+                let fixed_handle = FixedHandleImpl::from_index(i);
+                let dynamic_handle = delaunay.vertex(fixed_handle);
+                let outgoing_edges = dynamic_handle.out_edges();
+                
+                let xi = points_array[[i, 0]];
+                let yi = points_array[[i, 1]];
+                
+                let mut nn_distance = INFINITY;
+                
+                for e in outgoing_edges {
+                    let neigh_vertex = e.to().position();
+                    let dx = neigh_vertex.x - xi;
+                    let dy = neigh_vertex.y - yi;
+                    let mut vector = vec![dx, dy];
+                    if periodic {
+                        ensure_periodicity(&mut vector, &box_lengths);
+                    }
+                    let edge_length = hypot(vector[0], vector[1]);
+                    if edge_length < nn_distance {
+                        nn_distance = edge_length;
+                    }
+                }
+                
+                *distance_i = nn_distance;
+            });
+        }
+        
+        let output_areas = if voronoi_areas {
+            Some(areas_vector)
+        } else {
+            None
+        };
+        
+        let output_counts = if voronoi_neighbour_count {
+            Some(neighbour_counts_vector)
+        } else {
+            None
+        };
+        
+        let output_distances = if voronoi_nn_distance {
+            Some(nn_distances_vector)
+        } else {
+            None
+        };
+        
+        return (output_areas, output_counts, output_distances);
+        
+    }
+    
+    
+    pub fn get_centered_voronoi_cell(
+        delaunay: &DelaunayTriangulation<Point2<f64>>,
+        i: usize,
+    ) -> geo::Polygon<f64> {
+        // In this scenario, the from_index is safe because only the n_particles first values are explored out of 9 times that
+        let current_handle = FixedHandleImpl::from_index(i);
+        // Find Voronoi faces corresponding to both vertices of the Delaunay
+        let voronoi_face = delaunay.vertex(current_handle).as_voronoi_face();
+
+        // Convert the handles to Voronoi faces into polygons, in the form of vectors of 2-vectors.
+        // To understand what's being done here: go through https://docs.rs/spade/latest/spade/index.html
+        // The Delaunay, https://docs.rs/spade/latest/spade/struct.DelaunayTriangulation.html can be used to get Voronoi faces https://docs.rs/spade/latest/spade/handles/type.VoronoiFace.html#
+        // Voronoi faces have an impl to get oriented edges, from which one can get Voronoi vertices https://docs.rs/spade/latest/spade/handles/enum.VoronoiVertex.html
+        // Then, their positions can be found
+        let mut voronoi_polygon: Vec<Vec<f64>> = Vec::new();
+        let mut voronoi_center: Vec<f64> = vec![0.0; 2];
+        let mut voronoi_counter: usize = 0;
+        for voro_edge in voronoi_face.adjacent_edges() {
+            let voro_vertex = voro_edge.from().position().unwrap();
+            let vertex_x = voro_vertex.x;
+            let vertex_y = voro_vertex.y;
+            voronoi_polygon.push(vec![vertex_x, vertex_y]);
+            voronoi_center[0] += vertex_x;
+            voronoi_center[1] += vertex_y;
+            voronoi_counter += 1;
+        }
+        voronoi_center[0] /= voronoi_counter as f64;
+        voronoi_center[1] /= voronoi_counter as f64;
+        let mut voronoi_polygon_tuple: Vec<(f64, f64)> = Vec::new();
+        for k in 0..voronoi_counter {
+            voronoi_polygon[k][0] -= voronoi_center[0];
+            voronoi_polygon[k][1] -= voronoi_center[1];
+            voronoi_polygon_tuple.push((voronoi_polygon[k][0], voronoi_polygon[k][1]));
+        }
+
+        // Return a polygon, define polygons through geo https://docs.rs/geo/latest/geo/struct.Polygon.html
+        let voronoi_polygon_as_poly = Polygon::new(LineString::from(voronoi_polygon_tuple), vec![]);
+        return voronoi_polygon_as_poly;
     }
 }
