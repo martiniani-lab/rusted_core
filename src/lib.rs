@@ -32,7 +32,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         // Mutate the data
         // No need to return any value as the input data is mutated
         let vector_rdf = rust_fn::compute_vector_rdf2d(&array, box_size, binsize, periodic);
-        let array_rdf = PyArray2::from_vec2_bound(py, &vector_rdf).unwrap();
+        let array_rdf = PyArray2::from_array_bound(py, &vector_rdf);
 
         return array_rdf;
     }
@@ -52,7 +52,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         // Mutate the data
         // No need to return any value as the input data is mutated
         let vector_rdf = rust_fn::compute_vector_rdf3d(&array, box_size, binsize, periodic);
-        let array_rdf = PyArray3::from_vec3_bound(py, &vector_rdf).unwrap();
+        let array_rdf = PyArray3::from_array_bound(py, &vector_rdf);
 
         return array_rdf;
     }
@@ -211,6 +211,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
 // The rust side functions
 // Put it in mod to separate it from the python bindings
+// XXX This part can/should be broken down into separate mods in rs files eventually
 mod rust_fn {
     use ang::atan2;
     use libm::hypot;
@@ -240,7 +241,7 @@ mod rust_fn {
         box_size: f64,
         binsize: f64,
         periodic: bool,
-    ) -> Vec<Vec<f64>> {
+    ) -> Array<f64, Dim<[usize; 2]>> {
         let npoints = points.shape()[0];
         let ndim = points.shape()[1];
         println!("Found {:?} points in d = {:?}", npoints, ndim);
@@ -258,7 +259,7 @@ mod rust_fn {
         box_size_y: f64,
         binsize: f64,
         periodic: bool,
-    ) -> Vec<Vec<f64>> {
+    ) -> Array<f64, Dim<[usize; 2]>> {
         // Check that the binsize is physical
         assert!(
             binsize > 0.0,
@@ -298,12 +299,16 @@ mod rust_fn {
                 *(rdf[index_x_symm][index_y_symm].write().unwrap()) += 1.0;
             }
         });
-
-        let mut rdf_vector = vec![vec![0.0; nbins]; nbins];
-        rdf_vector.par_iter_mut().enumerate().for_each(| (i, rdf_vector_i)| {
-            for j in 0..nbins {
-                rdf_vector_i[j] = *rdf.get(i).unwrap().get(j).unwrap().read().unwrap();
-            }
+        
+        let mut rdf_vector = Array::<f64, _>::zeros((nbins, nbins).f());
+        Zip::indexed(&mut rdf_vector).par_for_each(|(i, j), rdf_val| {
+            *rdf_val = *rdf
+            .get(i)
+            .unwrap()
+            .get(j)
+            .unwrap()
+            .read()
+            .unwrap();
         });
 
         return rdf_vector;
@@ -425,7 +430,7 @@ mod rust_fn {
         box_size: f64,
         binsize: f64,
         periodic: bool,
-    ) -> Vec<Vec<Vec<f64>>> {
+    ) -> Array<f64, Dim<[usize; 3]>> {
         let npoints = points.shape()[0];
         let ndim = points.shape()[1];
         println!("Found {:?} points in d = {:?}", npoints, ndim);
@@ -446,7 +451,7 @@ mod rust_fn {
         box_size_z: f64,
         binsize: f64,
         periodic: bool,
-    ) -> Vec<Vec<Vec<f64>>> {
+    ) -> Array<f64, Dim<[usize; 3]>> {
         // Check that the binsize is physical
         assert!(
             binsize > 0.0,
@@ -491,23 +496,19 @@ mod rust_fn {
                     .unwrap()) += 1.0;
             }
         });
-
+        
         // Could make this an array and actually parallelize over all dimensions
-        let mut rdf_vector = vec![vec![vec![0.0; nbins]; nbins]; nbins];
-        rdf_vector.par_iter_mut().enumerate().for_each(|(i, rdf_i)| {
-            for j in 0..nbins {
-                for k in 0..nbins {
-                    rdf_i[j][k] = *rdf
-                        .get(i)
-                        .unwrap()
-                        .get(j)
-                        .unwrap()
-                        .get(k)
-                        .unwrap()
-                        .read()
-                        .unwrap();
-                }
-            }
+        let mut rdf_vector = Array::<f64, _>::zeros((nbins, nbins, nbins).f());
+        Zip::indexed(&mut rdf_vector).par_for_each(|(i, j, k), rdf_val| {
+            *rdf_val = *rdf
+            .get(i)
+            .unwrap()
+            .get(j)
+            .unwrap()
+            .get(k)
+            .unwrap()
+            .read()
+            .unwrap();
         });
 
         return rdf_vector;
