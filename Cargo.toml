@@ -15,6 +15,7 @@ numpy = "*"
 ndarray = {version = "*", features = ["rayon"]}
 rayon = "*"
 spade = '*'
+rstar = '*'
 ang = '*'
 libm = '*'
 geo = '*'

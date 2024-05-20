@@ -23,10 +23,9 @@ This is very much a WIP but the code already supports
 - Our long-range orientational correlation in 2d
 
 ### TODO
-- Carry over variance measurements from dedicated library
 - Carry over Steinhardt's 3d BOOPs from hyperalg
 - Add simple functions for k-nearest-neighbor statistics like in my wls files
-- Carry over R-Tree construction from my pattern-matching code for metric neighbor statistics
+- Compute a few quantities from R-Tree
 - Add simple K-function and/or Fry plots functions?
 - Add an option to normalize g via the summands, g(r) = sum (bin / norm(bin)) instead of g(r) = sum(bin) / norm(r).
 - Try to implement a kernel-based version of g to reduce binning issues?
