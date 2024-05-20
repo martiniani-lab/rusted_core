@@ -1,6 +1,6 @@
 use ndarray::Dim;
-use numpy::{PyArray, PyArray1, PyArray2, PyArray3, PyArrayDyn};
-use pyo3::prelude::{pymodule, PyModule, PyResult, Python};
+use numpy::{PyArray, PyArrayMethods, PyArray1, PyArray2, PyArray3, PyArrayDyn};
+use pyo3::prelude::{pymodule, PyModule, PyResult, Python, Bound};
 
 // NOTE
 // * numpy defaults to np.float64, if you use other type than f64 in Rust
@@ -8,7 +8,7 @@ use pyo3::prelude::{pymodule, PyModule, PyResult, Python};
 
 // The name of the module must be the same as the rust package name
 #[pymodule]
-fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // This is a pure function (no mutations of incoming data).
     // You can see this as the python array in the function arguments is readonly.
     // The object we return will need ot have the same lifetime as the Python.
@@ -20,11 +20,11 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     #[pyfn(m)]
     fn compute_vector_rdf2d<'py>(
         py: Python<'py>,
-        points: &PyArrayDyn<f64>,
+        points: Bound<'py, PyArrayDyn<f64>>,
         box_size: f64,
         binsize: f64,
         periodic: bool,
-    ) -> &'py PyArray2<f64> {
+    ) -> Bound<'py, PyArray2<f64>> {
         // First we convert the Python numpy array into Rust ndarray
         // Here, you can specify different array sizes and types.
         let array = unsafe { points.as_array() }; // Convert to ndarray type
@@ -32,7 +32,7 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
         // Mutate the data
         // No need to return any value as the input data is mutated
         let vector_rdf = rust_fn::compute_vector_rdf2d(&array, box_size, binsize, periodic);
-        let array_rdf = PyArray2::from_vec2(py, &vector_rdf).unwrap();
+        let array_rdf = PyArray2::from_vec2_bound(py, &vector_rdf).unwrap();
 
         return array_rdf;
     }
@@ -40,11 +40,11 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     #[pyfn(m)]
     fn compute_vector_rdf3d<'py>(
         py: Python<'py>,
-        points: &PyArrayDyn<f64>,
+        points: Bound<'py, PyArrayDyn<f64>>,
         box_size: f64,
         binsize: f64,
         periodic: bool,
-    ) -> &'py PyArray3<f64> {
+    ) -> Bound<'py, PyArray3<f64>> {
         // First we convert the Python numpy array into Rust ndarray
         // Here, you can specify different array sizes and types.
         let array = unsafe { points.as_array() }; // Convert to ndarray type
@@ -52,7 +52,7 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
         // Mutate the data
         // No need to return any value as the input data is mutated
         let vector_rdf = rust_fn::compute_vector_rdf3d(&array, box_size, binsize, periodic);
-        let array_rdf = PyArray3::from_vec3(py, &vector_rdf).unwrap();
+        let array_rdf = PyArray3::from_vec3_bound(py, &vector_rdf).unwrap();
 
         return array_rdf;
     }
@@ -60,12 +60,12 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     #[pyfn(m)]
     fn compute_vector_orientation_corr_2d<'py>(
         py: Python<'py>,
-        points: &PyArrayDyn<f64>,
+        points: Bound<'py, PyArrayDyn<f64>>,
         box_size: f64,
         binsize: f64,
         periodic: bool,
         order: u64,
-    ) -> (&'py PyArray2<f64>, &'py PyArray<f64, Dim<[usize; 3]>>) {
+    ) -> (Bound<'py,PyArray2<f64>>, Bound<'py,PyArray<f64, Dim<[usize; 3]>>>) {
         // First we convert the Python numpy array into Rust ndarray
         // Here, you can specify different array sizes and types.
         let array = unsafe { points.as_array() }; // Convert to ndarray type
@@ -74,8 +74,8 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
         // No need to return any value as the input data is mutated
         let (vector_rdf, vector_corr) =
             rust_fn::compute_vector_orientation_corr_2d(&array, box_size, binsize, periodic, order);
-        let array_rdf = PyArray2::from_owned_array(py, vector_rdf);
-        let array_corr = PyArray::from_owned_array(py, vector_corr);
+        let array_rdf = PyArray2::from_array_bound(py, &vector_rdf);
+        let array_corr = PyArray::from_array_bound(py, &vector_corr);
 
         return (array_rdf, array_corr);
     }
@@ -83,13 +83,13 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     #[pyfn(m)]
     fn compute_radial_correlations_2d<'py>(
         py: Python<'py>,
-        points: &PyArrayDyn<f64>,
-        field: &PyArrayDyn<f64>,
+        points: Bound<'py, PyArrayDyn<f64>>,
+        field: Bound<'py, PyArrayDyn<f64>>,
         box_size: f64,
         binsize: f64,
         periodic: bool,
         connected: bool,
-    ) -> (&'py PyArray1<f64>, &'py PyArray<f64, Dim<[usize; 2]>>) {
+    ) -> (Bound<'py,PyArray1<f64>>, Bound<'py,PyArray<f64, Dim<[usize; 2]>>>) {
         // First we convert the Python numpy array into Rust ndarray
         // Here, you can specify different array sizes and types.
         let array = unsafe { points.as_array() }; // Convert to ndarray type
@@ -112,8 +112,8 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
             periodic,
             connected,
         );
-        let array_rdf = PyArray::from_vec(py, rdf);
-        let pyarray_field_corrs = PyArray::from_owned_array(py, field_corrs);
+        let array_rdf = PyArray::from_vec_bound(py, rdf);
+        let pyarray_field_corrs = PyArray::from_array_bound(py, &field_corrs);
 
         return (array_rdf, pyarray_field_corrs);
     }
@@ -121,12 +121,12 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     #[pyfn(m)]
     fn compute_radial_orientation_corr_2d<'py>(
         py: Python<'py>,
-        points: &PyArrayDyn<f64>,
+        points: Bound<'py, PyArrayDyn<f64>>,
         box_size: f64,
         binsize: f64,
         periodic: bool,
         order: u64,
-    ) -> (&'py PyArray1<f64>, &'py PyArray<f64, Dim<[usize; 2]>>) {
+    ) -> (Bound<'py,PyArray1<f64>>, Bound<'py,PyArray<f64, Dim<[usize; 2]>>>) {
         // First we convert the Python numpy array into Rust ndarray
         // Here, you can specify different array sizes and types.
         let array = unsafe { points.as_array() }; // Convert to ndarray type
@@ -136,8 +136,8 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
         let (rdf, radial_corr) = rust_fn::compute_radial_orientation_corr_2d(
             &array, box_size, box_size, binsize, periodic, order,
         );
-        let array_rdf = PyArray::from_vec(py, rdf);
-        let array_corr = PyArray::from_owned_array(py, radial_corr);
+        let array_rdf = PyArray::from_vec_bound(py, rdf);
+        let array_corr = PyArray::from_array_bound(py, &radial_corr);
 
         return (array_rdf, array_corr);
     }
@@ -145,13 +145,13 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     #[pyfn(m)]
     fn compute_radial_correlations_3d<'py>(
         py: Python<'py>,
-        points: &PyArrayDyn<f64>,
-        field: &PyArrayDyn<f64>,
+        points: Bound<'py, PyArrayDyn<f64>>,
+        field: Bound<'py, PyArrayDyn<f64>>,
         box_size: f64,
         binsize: f64,
         periodic: bool,
         connected: bool,
-    ) -> (&'py PyArray1<f64>, &'py PyArray<f64, Dim<[usize; 2]>>) {
+    ) -> (Bound<'py,PyArray1<f64>>, Bound<'py,PyArray<f64, Dim<[usize; 2]>>>) {
         // First we convert the Python numpy array into Rust ndarray
         // Here, you can specify different array sizes and types.
         let array = unsafe { points.as_array() }; // Convert to ndarray type
@@ -175,8 +175,8 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
             periodic,
             connected,
         );
-        let array_rdf = PyArray::from_vec(py, rdf);
-        let pyarray_field_corrs = PyArray::from_owned_array(py, field_corrs);
+        let array_rdf = PyArray::from_vec_bound(py, rdf);
+        let pyarray_field_corrs = PyArray::from_owned_array_bound(py, field_corrs);
 
         return (array_rdf, pyarray_field_corrs);
     }
@@ -184,11 +184,11 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     #[pyfn(m)]
     fn compute_2d_boops<'py>(
         py: Python<'py>,
-        points: &PyArrayDyn<f64>,
-        orders: &PyArrayDyn<isize>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        orders: &Bound<'py, PyArrayDyn<isize>>,
         box_size: f64,
         periodic: bool,
-    ) -> &'py PyArray<f64, Dim<[usize; 3]>> {
+    ) -> Bound<'py, PyArray<f64, Dim<[usize; 3]>>> {
         // First we convert the Python numpy array into Rust ndarray
         // Here, you can specify different array sizes and types.
         let array = unsafe { points.as_array() }; // Convert to ndarray type
@@ -201,7 +201,7 @@ fn rust(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
             box_size,
             periodic,
         );
-        let array_boops = PyArray::from_owned_array(py, boops);
+        let array_boops = PyArray::from_array_bound(py, &boops);
 
         return array_boops;
     }
