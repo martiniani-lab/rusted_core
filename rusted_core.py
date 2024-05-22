@@ -11,8 +11,8 @@ from scipy.special import gamma
 
 def main(input_file, 
          columns = np.arange(2), fields_columns = None, output_path = "", 
-         rdf = False, pcf = False, voronoi_quantities = False,
-         bin_width = 1/20, phi = None,
+         rdf = False, pcf = False, voronoi_quantities = False, compute_boops = False,
+         bin_width = 1/20, phi = None, boop_orders = np.array([6]),
          periodic = True, connected = False):
     '''
     Simple front-end for Rusted Core
@@ -23,6 +23,11 @@ def main(input_file,
     input_file = os.path.abspath(input_file)
     [dname,file_name] = os.path.split(input_file)
     dname = os.path.abspath(dname)
+    
+    if connected:
+        suffix = "_connected"
+    else:
+        suffix = ""
 
     if '.hkl' in file_name:
         points = hkl.load(input_file)[:,columns]
@@ -81,8 +86,13 @@ def main(input_file,
             
             np.savetxt(os.path.join(output_path,file_name+'_voronoi_quantities.csv'), np.vstack([areas, local_phis, neighbours, distances]).T )
         
+        if compute_boops:
+            
+            boops = rust.compute_2d_boops(points, boop_orders, boxsize, periodic)
+            np.savetxt(os.path.join(output_path,file_name+'_boops.csv'), boops.reshape(npoints, 2*boop_orders.shape[0]) )
+        
         if rdf:
-            if fields_columns is None:
+            if fields_columns is None and not compute_boops:
                 dummy = np.ones(points.shape)
                 radial_rdf, _ = rust.compute_radial_correlations_2d(points, dummy, boxsize, binsize, periodic,connected)
                 
@@ -101,7 +111,27 @@ def main(input_file,
                 
                 np.savetxt(os.path.join(output_path,file_name+'_rdf.csv'), np.vstack([bins, radial_rdf]).T )
                 
-
+            elif compute_boops:
+            
+                for i in range(boop_orders.shape[0]):
+                
+                    order_string = str(boop_orders[i])
+                
+                    radial_rdf, gboop = rust.compute_radial_correlations_2d(points, boops[:,i,:], boxsize, binsize, periodic,connected)
+                
+                    nbins = radial_rdf.shape[0]
+                    bins = (np.arange(0, nbins) + 0.5)*binsize
+                    fig = plt.figure(figsize=(10,10))
+                    ax = fig.gca()
+                    pc = ax.plot(bins, gboop[:,0]+gboop[:,1])
+                    ax.set_xlim(0,0.5)
+                    plt.savefig(file_name+"_radial_g"+order_string+"boop"+suffix+".png", dpi = 300)
+                    plt.close()
+                    
+                    if i == 0:
+                        np.savetxt(os.path.join(output_path,file_name+'_rdf.csv'), np.vstack([bins, radial_rdf]).T )
+                    np.savetxt(file_name+"_radial_g"+order_string+"boop"+suffix+ ".csv", np.vstack([bins,gboop[:,0]+gboop[:,1]]).T)
+            
             else: 
                 radial_rdf, fields_corr = rust.compute_radial_correlations_2d(points, fields, boxsize, binsize, periodic,connected)
             
@@ -109,7 +139,8 @@ def main(input_file,
                 bins = (np.arange(0, nbins) + 0.5)*binsize
                 fig = plt.figure()#figsize=(10,10))
                 ax = fig.gca()
-                pc = ax.plot(bins, fields_corr,c=cmr.ember(0.5), linewidth=0.75)
+                for k in range(fields_corr.shape[-1]):
+                    pc = ax.plot(bins, fields_corr[:,k],c=cmr.ember(0.5), linewidth=0.75)
                 ax.set_xlim(0,0.5)
                 ax.tick_params(labelsize=18)
                 ax.set_xlabel(r"$r$",fontsize=18)
@@ -138,6 +169,8 @@ if __name__ == '__main__':
         default = false", default = False)
     parser.add_argument("-voro", "--voronoi_quantities", action="store_true", help = "Compute Voronoi cell areas, number of neighbours, and nn distances\
         default = False", default = False)
+    parser.add_argument("-boops", "--compute_boops", action="store_true", help = "Compute Steinhardt's Bond-Orientational Order Parameters\
+        default = False", default = False)
     ## Parameters
     parser.add_argument("-col", "--columns", nargs = "+", type = int, help = "indices of columns to use for point coordinates\
         default=first two", default = None)
@@ -159,6 +192,7 @@ if __name__ == '__main__':
     rdf = args.radial_distribution_function
     pcf = args.pair_correlation_function
     voronoi_quantities = args.voronoi_quantities
+    compute_boops = args.compute_boops
     
     input_file = args.input_file
     columns_args = args.columns
@@ -178,4 +212,4 @@ if __name__ == '__main__':
     periodic = not args.free_boundary_condition
     connected = args.connected
     
-    main(input_file, columns = columns, fields_columns = fields_columns, phi = phi, bin_width=bin_width, periodic = periodic, connected=connected, rdf = rdf, pcf = pcf, voronoi_quantities = voronoi_quantities)
+    main(input_file, columns = columns, fields_columns = fields_columns, phi = phi, bin_width=bin_width, periodic = periodic, connected=connected, rdf = rdf, pcf = pcf, voronoi_quantities = voronoi_quantities, compute_boops=compute_boops)
