@@ -9,7 +9,11 @@ import os
 import argparse
 from scipy.special import gamma
 
-def main(input_file, columns = np.arange(2), bin_width = 1/20, output_path = "", phi = None, periodic = True, connected = False, rdf = False):
+def main(input_file, 
+         columns = np.arange(2), fields_columns = None, output_path = "", 
+         rdf = False, pcf = False, voronoi_quantities = False,
+         bin_width = 1/20, phi = None,
+         periodic = True, connected = False):
     '''
     Simple front-end for Rusted Core
     '''
@@ -21,7 +25,9 @@ def main(input_file, columns = np.arange(2), bin_width = 1/20, output_path = "",
     dname = os.path.abspath(dname)
 
     if '.hkl' in file_name:
-        points = hkl.load(file_name)[:,columns]
+        points = hkl.load(input_file)[:,columns]
+        if fields_columns is not None:
+            fields =  hkl.load(input_file)[:,fields_columns]
     elif '.txt' in file_name:
         
         with open(input_file, 'r') as file:
@@ -35,6 +41,8 @@ def main(input_file, columns = np.arange(2), bin_width = 1/20, output_path = "",
             raise NotImplementedError("Delimiter not identified")
         
         points = np.loadtxt(input_file, delimiter=delimiter)[:,columns]
+        if fields_columns is not None:
+            fields =  np.loadtxt(input_file, delimiter=delimiter)[:,fields_columns]
     else:
         print("Wrong file format")
         sys.exit()
@@ -49,7 +57,7 @@ def main(input_file, columns = np.arange(2), bin_width = 1/20, output_path = "",
     if phi is None:
         radius = 0.5 * boxsize / (npoints)**(1.0/ndim)
     else:
-        # volume = surface_d * r^d, phi = N volume / boxsize^d, r = boxsize (phi/ N surface_d)^(1/d)
+        # volume = unitvolume_d * r^d, phi = N volume / boxsize^d, r = boxsize (phi/ N unitvolume_d)^(1/d)
         radius = boxsize * (phi / (npoints * unitball_volume(ndim)) )**(1.0/ndim)
     binsize = bin_width * radius
     
@@ -66,37 +74,52 @@ def main(input_file, columns = np.arange(2), bin_width = 1/20, output_path = "",
         plt.savefig(os.path.join(output_path,file_name+'scatter.png'), bbox_inches = 'tight', pad_inches = 0,dpi=300)
         plt.close()
         
-        (areas, neighbours, distances) = rust.compute_2d_all_voronoi_quantities(points, boxsize, periodic)
+        if voronoi_quantities:
         
-        local_phi = unitball_volume(ndim) * radius**ndim / areas
+            (areas, neighbours, distances) = rust.compute_2d_all_voronoi_quantities(points, boxsize, periodic)
+            local_phis = unitball_volume(ndim) * radius**ndim / areas
+            
+            np.savetxt(os.path.join(output_path,file_name+'_voronoi_quantities.csv'), np.vstack([areas, local_phis, neighbours, distances]).T )
         
         if rdf:
-            dummy = local_phi.reshape(npoints, 1)
-            radial_rdf, area_corr = rust.compute_radial_correlations_2d(points, dummy, boxsize, binsize, periodic,connected)
+            if fields_columns is None:
+                dummy = np.ones(points.shape)
+                radial_rdf, _ = rust.compute_radial_correlations_2d(points, dummy, boxsize, binsize, periodic,connected)
+                
+                
+                nbins = radial_rdf.shape[0]
+                bins = (np.arange(0, nbins) + 0.5)*binsize
+                fig = plt.figure()#figsize=(10,10))
+                ax = fig.gca()
+                pc = ax.plot(bins, radial_rdf,c=cmr.ember(0.5), linewidth=0.75)
+                ax.set_xlim(0,0.5)
+                ax.tick_params(labelsize=18)
+                ax.set_xlabel(r"$r$",fontsize=18)
+                ax.set_ylabel(r"$g(r)$",fontsize=18)
+                plt.savefig(file_name+"_rdf.png", bbox_inches = 'tight',pad_inches = 0, dpi = 300)
+                plt.close()
+                
+                np.savetxt(os.path.join(output_path,file_name+'_rdf.csv'), np.vstack([bins, radial_rdf]).T )
+                
+
+            else: 
+                radial_rdf, fields_corr = rust.compute_radial_correlations_2d(points, fields, boxsize, binsize, periodic,connected)
             
-            nbins = radial_rdf.shape[0]
-            bins = (np.arange(0, nbins) + 0.5)*binsize
-            fig = plt.figure()#figsize=(10,10))
-            ax = fig.gca()
-            pc = ax.plot(bins, radial_rdf,c=cmr.ember(0.5), linewidth=0.75)
-            ax.set_xlim(0,0.5)
-            ax.tick_params(labelsize=18)
-            ax.set_xlabel(r"$r$",fontsize=18)
-            ax.set_ylabel(r"$g(r)$",fontsize=18)
-            plt.savefig(file_name+"_radial_rdf.png", bbox_inches = 'tight',pad_inches = 0, dpi = 300)
-            plt.close()
-            
-            nbins = radial_rdf.shape[0]
-            bins = (np.arange(0, nbins) + 0.5)*binsize
-            fig = plt.figure()#figsize=(10,10))
-            ax = fig.gca()
-            pc = ax.plot(bins, area_corr,c=cmr.ember(0.5), linewidth=0.75)
-            ax.set_xlim(0,0.5)
-            ax.tick_params(labelsize=18)
-            ax.set_xlabel(r"$r$",fontsize=18)
-            ax.set_ylabel(r"$C(r)$",fontsize=18)
-            plt.savefig(file_name+"_corr.png", bbox_inches = 'tight',pad_inches = 0, dpi = 300)
-            plt.close()
+                nbins = radial_rdf.shape[0]
+                bins = (np.arange(0, nbins) + 0.5)*binsize
+                fig = plt.figure()#figsize=(10,10))
+                ax = fig.gca()
+                pc = ax.plot(bins, fields_corr,c=cmr.ember(0.5), linewidth=0.75)
+                ax.set_xlim(0,0.5)
+                ax.tick_params(labelsize=18)
+                ax.set_xlabel(r"$r$",fontsize=18)
+                ax.set_ylabel(r"$C(r)$",fontsize=18)
+                plt.savefig(file_name+"_radial_corr.png", bbox_inches = 'tight',pad_inches = 0, dpi = 300)
+                plt.close()
+                
+                
+                np.savetxt(os.path.join(output_path,file_name+'_rdf.csv'), np.vstack([bins, radial_rdf]).T )
+                np.savetxt(os.path.join(output_path,file_name+'_radia_corr.csv'), np.vstack([bins, fields_corr]).T )
     
 
 def unitball_volume(ndim):
@@ -111,7 +134,15 @@ if __name__ == '__main__':
     ## Tasks
     parser.add_argument("-rdf", "--radial_distribution_function", action = 'store_true', help = "Compute the rdf\
         default = false", default = False)
+    parser.add_argument("-pcf", "--pair_correlation_function", action = 'store_true', help = "Compute the pcf\
+        default = false", default = False)
+    parser.add_argument("-voro", "--voronoi_quantities", action="store_true", help = "Compute Voronoi cell areas, number of neighbours, and nn distances\
+        default = False", default = False)
     ## Parameters
+    parser.add_argument("-col", "--columns", nargs = "+", type = int, help = "indices of columns to use for point coordinates\
+        default=first two", default = None)
+    parser.add_argument("-fcol", "--fields_columns", nargs = "+", type = int, help = "indices of columns to use for fields to correlate\
+        default=None", default = None)
     parser.add_argument("--n_cpus", type=int, help="Number of cpus to use for computation\
         default = os.cpu_count", default=os.cpu_count())
     parser.add_argument("--phi", type=float, help = "Packing fraction, used to determine radius\
@@ -126,11 +157,25 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     rdf = args.radial_distribution_function
+    pcf = args.pair_correlation_function
+    voronoi_quantities = args.voronoi_quantities
     
     input_file = args.input_file
+    columns_args = args.columns
+    if columns_args     != None:
+        columns_args = tuple(columns_args)
+        columns = np.array(columns_args)
+    else:
+        columns = np.arange(2)
+    fields_columns_args = args.fields_columns
+    if fields_columns_args     != None:
+        fields_columns_args = tuple(fields_columns_args)
+        fields_columns = np.array(fields_columns_args)
+    else:
+        fields_columns = None
     phi = args.phi
     bin_width = args.bin_width
     periodic = not args.free_boundary_condition
     connected = args.connected
     
-    main(input_file, phi = phi, bin_width=bin_width, periodic = periodic, connected=connected, rdf = rdf)
+    main(input_file, columns = columns, fields_columns = fields_columns, phi = phi, bin_width=bin_width, periodic = periodic, connected=connected, rdf = rdf, pcf = pcf, voronoi_quantities = voronoi_quantities)
