@@ -369,7 +369,6 @@ mod rust_fn {
     ) -> Array<f64, Dim<[usize; 2]>> {
         let npoints = points.shape()[0];
         let ndim = points.shape()[1];
-        println!("Found {:?} points in d = {:?}", npoints, ndim);
         assert!(ndim == 2);
 
         // Compute the correlations
@@ -450,7 +449,6 @@ mod rust_fn {
     ) -> (Array<f64, Dim<[usize; 2]>>, Array<f64, Dim<[usize; 3]>>) {
         let npoints = points.shape()[0];
         let ndim = points.shape()[1];
-        println!("Found {:?} points in d = {:?}", npoints, ndim);
         assert!(ndim == 2);
 
         // Compute the correlations
@@ -562,7 +560,6 @@ mod rust_fn {
     ) -> Array<f64, Dim<[usize; 3]>> {
         let npoints = points.shape()[0];
         let ndim = points.shape()[1];
-        println!("Found {:?} points in d = {:?}", npoints, ndim);
         assert!(ndim == 3);
 
         // Compute the correlations
@@ -1341,7 +1338,6 @@ mod rust_fn {
 
         let npoints = points.shape()[0];
         let ndim = points.shape()[1];
-        println!("Found {:?} points in d = {:?}", npoints, ndim);
 
         assert!(ndim < 4);
 

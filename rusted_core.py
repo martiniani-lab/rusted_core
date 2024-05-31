@@ -10,9 +10,9 @@ import argparse
 from scipy.special import gamma
 
 def main(input_file, 
-         columns = np.arange(2), fields_columns = None, output_path = "", 
+         columns = np.arange(2), fields_columns = None, output_path = "", skip = 1,
          rdf = False, pcf = False, voronoi_quantities = False, compute_boops = False,
-         bin_width = 1/20, phi = None, boop_orders = np.array([6]),
+         bin_width = 1/20, phi = None, starting_box_size = None, boop_orders = np.array([6]),
          periodic = True, connected = False):
     '''
     Simple front-end for Rusted Core
@@ -36,10 +36,13 @@ def main(input_file,
     elif '.txt' in file_name:
         
         with open(input_file, 'r') as file:
-            first_line = file.readline()
+            for line in range(skip+1):
+                first_line = file.readline()
         # Determine the delimiter based on the first line
         if ',' in first_line:
             delimiter = ','
+        elif "\t" in first_line:
+            delimiter = "\t"
         elif ' ' in first_line:
             delimiter = ' '
         else:
@@ -57,7 +60,13 @@ def main(input_file,
     
     # Rescale the points
     points -= points.min()
-    points /= points.max()
+    if box_size is None:
+        points /= points.max()
+    else:
+        points /= starting_box_size
+        if points.max() > 1.0:
+            print("Wrong box size!")
+            sys.exit()
     boxsize = 1.0
     if phi is None:
         radius = 0.5 * boxsize / (npoints)**(1.0/ndim)
@@ -69,14 +78,14 @@ def main(input_file,
     print(f"Found {npoints} points in {ndim}d\n")
     
     if ndim == 2:
-        fig = plt.figure(figsize=[7,7])
+        fig = plt.figure(figsize=[10,10])
         ax = fig.gca()
         ax.set_xlim((0,boxsize))
         ax.set_ylim((0,boxsize))
         r_ = ax.transData.transform([radius,0])[0] - ax.transData.transform([0,0])[0]
-        marker_size = np.pi * r_**2
+        marker_size = np.pi * r_**2 *0.75 # Somehow a prefactor is necessary? Check this eventually
         pc = ax.scatter(points[:,0],points[:,1], s=marker_size, edgecolors='none')
-        plt.savefig(os.path.join(output_path,file_name+'scatter.png'), bbox_inches = 'tight', pad_inches = 0,dpi=300)
+        plt.savefig(os.path.join(output_path,file_name+'_scatter.png'), bbox_inches = 'tight', pad_inches = 0,dpi=300)
         plt.close()
         
         if voronoi_quantities:
@@ -128,6 +137,16 @@ def main(input_file,
                     plt.savefig(file_name+"_radial_g"+order_string+"boop"+suffix+".png", dpi = 300)
                     plt.close()
                     
+                    fig = plt.figure()#figsize=(10,10))
+                    ax = fig.gca()
+                    pc = ax.plot(bins, radial_rdf,c=cmr.ember(0.5), linewidth=0.75)
+                    ax.set_xlim(0,0.5)
+                    ax.tick_params(labelsize=18)
+                    ax.set_xlabel(r"$r$",fontsize=18)
+                    ax.set_ylabel(r"$g(r)$",fontsize=18)
+                    plt.savefig(file_name+"_rdf.png", bbox_inches = 'tight',pad_inches = 0, dpi = 300)
+                    plt.close()
+                    
                     if i == 0:
                         np.savetxt(os.path.join(output_path,file_name+'_rdf.csv'), np.vstack([bins, radial_rdf]).T )
                     np.savetxt(file_name+"_radial_g"+order_string+"boop"+suffix+ ".csv", np.vstack([bins,gboop[:,0]+gboop[:,1]]).T)
@@ -151,6 +170,43 @@ def main(input_file,
                 
                 np.savetxt(os.path.join(output_path,file_name+'_rdf.csv'), np.vstack([bins, radial_rdf]).T )
                 np.savetxt(os.path.join(output_path,file_name+'_radia_corr.csv'), np.vstack([bins, fields_corr]).T )
+                
+        # debug
+        orientation = False
+        logscaleplot = False
+        vmaxmax = 1e1
+        if pcf:
+            if orientation:
+                raise NotImplementedError
+            else:
+                vector_rdf = rust.compute_vector_rdf2d(points, boxsize, binsize, periodic)
+                
+            nbins = np.ceil(boxsize/binsize)
+            rho_n = npoints * npoints / ( boxsize * boxsize)
+            vector_rdf /= rho_n * binsize * binsize
+            np.savetxt(output_path+file_name+"vector_rdf.csv", vector_rdf)
+            
+            if periodic:
+                center = int(vector_rdf.shape[0]/2)
+                width = int(vector_rdf.shape[1]/2)
+            else:
+                center = int(vector_rdf.shape[0]/4)
+                width = int(vector_rdf.shape[1]/4)
+                
+            fig = plt.figure(figsize=(10,10))
+            ax = fig.gca()
+            if logscaleplot:
+                pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1],norm=clr.LogNorm(vmin=1e-3,vmax=1e1), cmap=cmr.ember, extent=[-0.5,0.5,0.5,-0.5])
+            else:
+                vmax = np.min([vector_rdf.max(), vmaxmax])
+                pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1], vmin = 0, vmax = vmax, cmap=cmr.ember, extent=[-0.5,0.5,0.5,-0.5])
+            fig.colorbar(pc)
+            plt.savefig(output_path+file_name+"_vector_rdf.png", dpi = 300)
+            plt.close()
+            
+            if orientation:
+                vector_orientation /= rho_n * binsize * binsize
+                np.savetxt(output_path+file_name+"vector_orientation.csv", vector_orientation)
     
 
 def unitball_volume(ndim):
@@ -180,6 +236,8 @@ if __name__ == '__main__':
         default = os.cpu_count", default=os.cpu_count())
     parser.add_argument("--phi", type=float, help = "Packing fraction, used to determine radius\
         default = None", default = None)
+    parser.add_argument("-L", "--box_size", type=float, help = "Box size, if exact value known\
+        default = None", default = None)
     parser.add_argument("-bw", "--bin_width", type=float, help = "Width of the bins, in units of radii OR typical distances\
         default = 1/20", default = 1/20)
     parser.add_argument("-fbc", "--free_boundary_condition", action='store_true', help = "Switch to free boundary conditions instead of periodic ones\
@@ -208,8 +266,9 @@ if __name__ == '__main__':
     else:
         fields_columns = None
     phi = args.phi
+    box_size = args.box_size
     bin_width = args.bin_width
     periodic = not args.free_boundary_condition
     connected = args.connected
     
-    main(input_file, columns = columns, fields_columns = fields_columns, phi = phi, bin_width=bin_width, periodic = periodic, connected=connected, rdf = rdf, pcf = pcf, voronoi_quantities = voronoi_quantities, compute_boops=compute_boops)
+    main(input_file, columns = columns, fields_columns = fields_columns, phi = phi, starting_box_size=box_size, bin_width=bin_width, periodic = periodic, connected=connected, rdf = rdf, pcf = pcf, voronoi_quantities = voronoi_quantities, compute_boops=compute_boops)
