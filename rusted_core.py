@@ -172,12 +172,14 @@ def main(input_file,
                 np.savetxt(os.path.join(output_path,file_name+'_radia_corr.csv'), np.vstack([bins, fields_corr]).T )
                 
         # debug
-        orientation = False
+        orientation = True
+        orientation_order = 11
         logscaleplot = False
         vmaxmax = 1e1
         if pcf:
             if orientation:
-                raise NotImplementedError
+                vector_rdf, vector_orientation = rust.compute_vector_orientation_corr_2d(points, boxsize, binsize, periodic, orientation_order)
+                vector_orientation = np.sum(vector_orientation**2,axis=-1)
             else:
                 vector_rdf = rust.compute_vector_rdf2d(points, boxsize, binsize, periodic)
                 
@@ -206,7 +208,19 @@ def main(input_file,
             
             if orientation:
                 vector_orientation /= rho_n * binsize * binsize
+                vector_orientation /= npoints
                 np.savetxt(output_path+file_name+"vector_orientation.csv", vector_orientation)
+                
+                fig = plt.figure(figsize=(10,10))
+                ax = fig.gca()
+                if logscaleplot:
+                    pc = ax.imshow(vector_orientation[center-width:center+width+1, center-width:center+width+1],norm=clr.LogNorm(vmin=1e-3,vmax=1e1), cmap=cmr.ember)
+                else:
+                    vmax = np.min([vector_orientation.max(), vmaxmax])
+                    pc = ax.imshow(vector_orientation[center-width:center+width+1, center-width:center+width+1], vmin = 0, vmax = None, cmap=cmr.ember)
+                fig.colorbar(pc)
+                plt.savefig(output_path+file_name+"_vector_orientation.png", dpi = 300)
+                plt.close()
     
 
 def unitball_volume(ndim):

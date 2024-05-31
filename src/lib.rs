@@ -369,6 +369,7 @@ mod rust_fn {
     ) -> Array<f64, Dim<[usize; 2]>> {
         let npoints = points.shape()[0];
         let ndim = points.shape()[1];
+        assert!(npoints > 1);
         assert!(ndim == 2);
 
         // Compute the correlations
@@ -449,6 +450,7 @@ mod rust_fn {
     ) -> (Array<f64, Dim<[usize; 2]>>, Array<f64, Dim<[usize; 3]>>) {
         let npoints = points.shape()[0];
         let ndim = points.shape()[1];
+        assert!(npoints > 1);
         assert!(ndim == 2);
 
         // Compute the correlations
@@ -560,6 +562,7 @@ mod rust_fn {
     ) -> Array<f64, Dim<[usize; 3]>> {
         let npoints = points.shape()[0];
         let ndim = points.shape()[1];
+        assert!(npoints > 1);
         assert!(ndim == 3);
 
         // Compute the correlations
@@ -1339,6 +1342,7 @@ mod rust_fn {
         let npoints = points.shape()[0];
         let ndim = points.shape()[1];
 
+        assert!(npoints > 1);
         assert!(ndim < 4);
 
         if ndim == 2 { // 2D case
