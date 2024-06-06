@@ -11,9 +11,10 @@ from scipy.special import gamma
 
 def main(input_file, 
          columns = np.arange(2), fields_columns = None, output_path = "", skip = 1,
-         rdf = False, pcf = False, voronoi_quantities = False, compute_boops = False,
-         bin_width = 1/20, phi = None, starting_box_size = None, boop_orders = np.array([6]),
-         periodic = True, connected = False):
+         rdf = False, pcf = False, voronoi_quantities = False, compute_boops = False, orientational_cf = False, compute_furthest_sites = False,
+         bin_width = 1/20, phi = None, starting_box_size = None, boop_orders = np.array([6]), orientation_order = 6,
+         periodic = True, connected = False,
+         logscaleplot = False, vmaxmax = 1e1):
     '''
     Simple front-end for Rusted Core
     '''
@@ -171,13 +172,8 @@ def main(input_file,
                 np.savetxt(os.path.join(output_path,file_name+'_rdf.csv'), np.vstack([bins, radial_rdf]).T )
                 np.savetxt(os.path.join(output_path,file_name+'_radia_corr.csv'), np.vstack([bins, fields_corr]).T )
                 
-        # debug
-        orientation = True
-        orientation_order = 11
-        logscaleplot = False
-        vmaxmax = 1e1
         if pcf:
-            if orientation:
+            if orientational_cf:
                 vector_rdf, vector_orientation = rust.compute_vector_orientation_corr_2d(points, boxsize, binsize, periodic, orientation_order)
                 vector_orientation = np.sum(vector_orientation**2,axis=-1)
             else:
@@ -206,7 +202,7 @@ def main(input_file,
             plt.savefig(output_path+file_name+"_vector_rdf.png", dpi = 300)
             plt.close()
             
-            if orientation:
+            if orientational_cf:
                 vector_orientation /= rho_n * binsize * binsize
                 vector_orientation /= npoints
                 np.savetxt(output_path+file_name+"vector_orientation.csv", vector_orientation)
@@ -221,6 +217,28 @@ def main(input_file,
                 fig.colorbar(pc)
                 plt.savefig(output_path+file_name+"_vector_orientation.png", dpi = 300)
                 plt.close()
+                
+        if compute_furthest_sites:
+            furthest_sites = rust.voronoi_furthest_sites(points, boxsize, periodic)
+            furthest_sites = furthest_sites[np.argwhere(furthest_sites[:,0]>= 0)[:,0],:]
+            furthest_sites = furthest_sites[np.argwhere(furthest_sites[:,1]>= 0)[:,0],:]
+            furthest_sites = furthest_sites[np.argwhere(furthest_sites[:,0] < boxsize)[:,0],:]
+            furthest_sites = furthest_sites[np.argwhere(furthest_sites[:,1] < boxsize)[:,0],:]
+            furthest_sites = furthest_sites[np.argsort(furthest_sites[:,2])]
+            
+            fig = plt.figure(figsize=[10,10])
+            ax = fig.gca()
+            ax.set_xlim((0,boxsize))
+            ax.set_ylim((0,boxsize))
+            r_ = ax.transData.transform([radius,0])[0] - ax.transData.transform([0,0])[0]
+            marker_size = np.pi * r_**2 *0.75 # Somehow a prefactor is necessary? Check this eventually
+            pc = ax.scatter(points[:,0],points[:,1], s=marker_size, edgecolors='none')
+            pc = ax.scatter(furthest_sites[-5:,0],furthest_sites[-5:,1], s=0.1*marker_size, edgecolors='none', c = 'r')
+            plt.savefig(os.path.join(output_path,file_name+'_furthest_site.png'), bbox_inches = 'tight', pad_inches = 0,dpi=300)
+            plt.close()
+            
+            print(furthest_sites.shape)
+            print(furthest_sites)
     
 
 def unitball_volume(ndim):
@@ -241,6 +259,14 @@ if __name__ == '__main__':
         default = False", default = False)
     parser.add_argument("-boops", "--compute_boops", action="store_true", help = "Compute Steinhardt's Bond-Orientational Order Parameters\
         default = False", default = False)
+    parser.add_argument("--boop_orders", nargs = "+", type = int, help = "BOOP orders to compute\
+        default=6", default = None)
+    parser.add_argument("-ocf", "--orientational_cf", action = 'store_true', help = "Compute the ocf\
+        default = false", default = False)
+    parser.add_argument("-oo", "--orientation_order", type = int, help = "OCF order to compute\
+        default=6", default = 6)
+    parser.add_argument("-fs", "--furthest_sites", action = 'store_true', help = "Compute the list of Voronoi sites with distance to closest point\
+        default = false", default = False)
     ## Parameters
     parser.add_argument("-col", "--columns", nargs = "+", type = int, help = "indices of columns to use for point coordinates\
         default=first two", default = None)
@@ -258,6 +284,11 @@ if __name__ == '__main__':
         default = False", default = False)
     parser.add_argument("-c", "--connected", action='store_true', help = "Switch to connected correlation functions\
         default = False", default = False)
+    ## Plotting options
+    parser.add_argument("--logscaleplot", action='store_true', help = "Use log scales on plots where it's an option\
+        default = False", default = False)
+    parser.add_argument("--vmaxmax", type=float, help = "Vmax at which maps are cropped\
+        default = 1e9", default = 1e9)
     
     args = parser.parse_args()
     
@@ -265,6 +296,15 @@ if __name__ == '__main__':
     pcf = args.pair_correlation_function
     voronoi_quantities = args.voronoi_quantities
     compute_boops = args.compute_boops
+    boop_orders_args = args.boop_orders
+    if boop_orders_args     != None:
+        boop_orders_args = tuple(boop_orders_args)
+        boop_orders = np.array(boop_orders_args)
+    else:
+        boop_orders = np.array([6])
+    orientational_cf = args.orientational_cf
+    orientation_order = args.orientation_order
+    compute_furthest_sites = args.furthest_sites
     
     input_file = args.input_file
     columns_args = args.columns
@@ -285,4 +325,12 @@ if __name__ == '__main__':
     periodic = not args.free_boundary_condition
     connected = args.connected
     
-    main(input_file, columns = columns, fields_columns = fields_columns, phi = phi, starting_box_size=box_size, bin_width=bin_width, periodic = periodic, connected=connected, rdf = rdf, pcf = pcf, voronoi_quantities = voronoi_quantities, compute_boops=compute_boops)
+    logscaleplot = args.logscaleplot
+    vmaxmax = args.vmaxmax
+    
+    main(input_file,
+         columns = columns, fields_columns = fields_columns, phi = phi, starting_box_size=box_size,
+         bin_width=bin_width, periodic = periodic, connected=connected,
+         rdf = rdf, pcf = pcf, voronoi_quantities = voronoi_quantities, compute_boops=compute_boops, orientational_cf = orientational_cf, compute_furthest_sites = compute_furthest_sites,
+         orientation_order = orientation_order, boop_orders= boop_orders, 
+         logscaleplot = logscaleplot, vmaxmax = vmaxmax)

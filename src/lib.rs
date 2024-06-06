@@ -310,6 +310,28 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
     
     #[pyfn(m)]
+    fn voronoi_furthest_sites<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        box_size: f64,
+        periodic: bool
+    ) -> Bound<'py, PyArray<f64, Dim<[usize; 2]>>> {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+
+        let furthest_sites = rust_fn::voronoi_furthest_site(
+            &array,
+            box_size,
+            box_size,
+            periodic
+        );
+        let array_furthest_sites = PyArray::from_array_bound(py, &furthest_sites);
+        
+        return array_furthest_sites;
+    }
+    
+    #[pyfn(m)]
     fn point_variances<'py>(
         py: Python<'py>,
         x: Bound<'py, PyArrayDyn<f64>>,
@@ -339,6 +361,7 @@ mod rust_fn {
     use ndarray::parallel::prelude::*;
     use ndarray::{s, Array, Axis, Dim, ShapeBuilder, Zip};
     use numpy::ndarray::{ArrayView1,ArrayViewD};
+    use rayon::iter::ParallelBridge;
     use std::f64::consts::PI;
     use std::f64::INFINITY;
     use std::sync::{Arc, RwLock};
@@ -1332,6 +1355,81 @@ mod rust_fn {
         return voronoi_polygon_as_poly;
     }
     
+    pub fn voronoi_furthest_site(
+        points_array: &ArrayViewD<'_, f64>,
+        box_size_x: f64,
+        box_size_y: f64,
+        periodic: bool
+    ) -> Array<f64, Dim<[usize; 2]>> {
+        // get the needed parameters from the input
+        let n_particles = points_array.shape()[0];
+        
+        let n_loop = if periodic { 9 * n_particles } else { n_particles };
+
+        // Enforce periodicity by adding copies.
+        let mut points: Vec<Point2<f64>> = vec![Point2::new(0.0, 0.0); n_loop];
+
+        points.par_iter_mut().enumerate().for_each(|(i, pointi)| {
+            let index = i % n_particles;
+            let quotient = i / n_particles;
+            let nx = match quotient / 3 {
+                0 => 0.0,
+                1 => -1.0,
+                2 => 1.0,
+                _ => 2.0,
+            };
+            let ny = match quotient % 3 {
+                0 => 0.0,
+                1 => -1.0,
+                2 => 1.0,
+                _ => 2.0,
+            };
+
+            assert!(nx < 2.0 && ny < 2.0, "Unexpected error when cloning boxes.");
+
+            let xi = points_array[[index, 0]];
+            let yi = points_array[[index, 1]];
+
+            let shifted_x: f64 = xi + nx * box_size_x;
+            let shifted_y: f64 = yi + ny * box_size_y;
+
+            let newpoint: Point2<f64> = Point2::new(shifted_x, shifted_y);
+
+            *pointi = newpoint;
+        });
+
+        // Bulk load the points
+        // bulk_load_stable ensures that the ordering of points is conserved, assuming no precise overlap
+        let delaunay = DelaunayTriangulation::<Point2<f64>>::bulk_load_stable(points).unwrap();
+
+        let n_faces = delaunay.num_inner_faces();
+        
+        let mut furthest_sites =  Array::<f64, _>::zeros((n_faces, 3).f());
+        
+        delaunay.inner_faces().into_iter()
+        .zip(furthest_sites.axis_iter_mut(Axis(0)))
+        .par_bridge()
+        .into_par_iter()
+        .for_each(|(face_i, mut site_i)| {
+            let circumcenter = face_i.circumcenter();
+            site_i[[0]] = circumcenter.x;
+            site_i[[1]] = circumcenter.y;
+            
+            site_i[[2]] = INFINITY;
+            
+            for vertex in face_i.vertices() {
+                let vertex_coords = vertex.position();
+                let distance = hypot(vertex_coords.x - circumcenter.x, vertex_coords.y - circumcenter.y);
+                if distance <= site_i[[2]] {
+                    site_i[[2]] = distance;
+                }
+            }
+            
+         });
+        
+        return furthest_sites;
+        
+    }
     
     pub fn point_variances(points: &ArrayViewD<'_, f64>, radii: &ArrayView1<'_, f64>, n_samples: usize) -> Vec<f64> {
 
