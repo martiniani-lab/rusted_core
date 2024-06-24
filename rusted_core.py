@@ -12,7 +12,8 @@ from scipy.special import gamma
 def main(input_file, 
          columns = np.arange(2), fields_columns = None, output_path = "", skip = 1,
          rdf = False, pcf = False, voronoi_quantities = False, compute_boops = False, orientational_cf = False, compute_furthest_sites = False,
-         bin_width = 1/20, phi = None, starting_box_size = None, boop_orders = np.array([6]), orientation_order = 6,
+         metric_clusters = False,
+         bin_width = 1/20, phi = None, starting_box_size = None, boop_orders = np.array([6]), orientation_order = 6, cluster_threshold = 1.0,
          periodic = True, connected = False,
          logscaleplot = False, vmaxmax = 1e1):
     '''
@@ -88,6 +89,12 @@ def main(input_file,
         pc = ax.scatter(points[:,0],points[:,1], s=marker_size, edgecolors='none')
         plt.savefig(os.path.join(output_path,file_name+'_scatter.png'), bbox_inches = 'tight', pad_inches = 0,dpi=300)
         plt.close()
+        
+        if metric_clusters:
+            threshold = cluster_threshold * 2.0 * radius
+            cluster_id = rust.cluster_by_distance(points, threshold, boxsize, periodic)
+            
+            np.savetxt(os.path.join(output_path,file_name+'_cluster_id.csv'), cluster_id, fmt="%d")
         
         if voronoi_quantities:
         
@@ -267,6 +274,10 @@ if __name__ == '__main__':
         default=6", default = 6)
     parser.add_argument("-fs", "--furthest_sites", action = 'store_true', help = "Compute the list of Voronoi sites with distance to closest point\
         default = false", default = False)
+    parser.add_argument("-mc","--metric_clusters", action = 'store_true', help = "Cluster particles into groups using metric distance as a filter\
+        default = false", default = False)
+    parser.add_argument("-th", "--cluster_threshold", type = float, help = "Value of the threshold in distance used to cluster points, in units of the diameter defined through phi\
+        default = 1.0", default = 1.0)
     ## Parameters
     parser.add_argument("-col", "--columns", nargs = "+", type = int, help = "indices of columns to use for point coordinates\
         default=first two", default = None)
@@ -305,6 +316,8 @@ if __name__ == '__main__':
     orientational_cf = args.orientational_cf
     orientation_order = args.orientation_order
     compute_furthest_sites = args.furthest_sites
+    metric_clusters = args.metric_clusters
+    cluster_threshold = args.cluster_threshold
     
     input_file = args.input_file
     columns_args = args.columns
@@ -332,5 +345,6 @@ if __name__ == '__main__':
          columns = columns, fields_columns = fields_columns, phi = phi, starting_box_size=box_size,
          bin_width=bin_width, periodic = periodic, connected=connected,
          rdf = rdf, pcf = pcf, voronoi_quantities = voronoi_quantities, compute_boops=compute_boops, orientational_cf = orientational_cf, compute_furthest_sites = compute_furthest_sites,
-         orientation_order = orientation_order, boop_orders= boop_orders, 
+         metric_clusters= metric_clusters,
+         orientation_order = orientation_order, boop_orders= boop_orders, cluster_threshold = cluster_threshold,
          logscaleplot = logscaleplot, vmaxmax = vmaxmax)

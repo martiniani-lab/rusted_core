@@ -331,6 +331,30 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         return array_furthest_sites;
     }
     
+        
+    #[pyfn(m)]
+    fn cluster_by_distance<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        threshold: f64,
+        box_size: f64,
+        periodic: bool
+    ) -> Bound<'py, PyArray1<usize>> {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+
+        let cluster_id = rust_fn::cluster_by_distance(
+            &array,
+            threshold,
+            &vec![box_size; 2],
+            periodic
+        );
+        let cluster_id = PyArray1::from_vec_bound(py, cluster_id);
+        
+        return cluster_id;
+    }
+    
     #[pyfn(m)]
     fn point_variances<'py>(
         py: Python<'py>,
@@ -364,10 +388,11 @@ mod rust_fn {
     use rayon::iter::ParallelBridge;
     use std::f64::consts::PI;
     use std::f64::INFINITY;
+    use std::fmt::Display;
     use std::sync::{Arc, RwLock};
     extern crate spade;
     use spade::internals::FixedHandleImpl;
-    use spade::{DelaunayTriangulation, Point2, Triangulation};
+    use spade::{DelaunayTriangulation, Point2, Triangulation, HasPosition};
 
     extern crate geo;
     use geo::algorithm::area::Area;
@@ -1102,41 +1127,7 @@ mod rust_fn {
 
         let mut boop_vectors = Array::<f64, _>::zeros((n_particles, boop_orders_number, 2).f());
 
-        // Enforce periodicity by adding copies.
-        let mut points: Vec<Point2<f64>> = vec![Point2::new(0.0, 0.0); 9 * n_particles];
-
-        points.par_iter_mut().enumerate().for_each(|(i, pointi)| {
-            let index = i % n_particles;
-            let quotient = i / n_particles;
-            let nx = match quotient / 3 {
-                0 => 0.0,
-                1 => -1.0,
-                2 => 1.0,
-                _ => 2.0,
-            };
-            let ny = match quotient % 3 {
-                0 => 0.0,
-                1 => -1.0,
-                2 => 1.0,
-                _ => 2.0,
-            };
-
-            assert!(nx < 2.0 && ny < 2.0, "Unexpected error when cloning boxes.");
-
-            let xi = points_array[[index, 0]];
-            let yi = points_array[[index, 1]];
-
-            let shifted_x: f64 = xi + nx * box_size_x;
-            let shifted_y: f64 = yi + ny * box_size_y;
-
-            let newpoint: Point2<f64> = Point2::new(shifted_x, shifted_y);
-
-            *pointi = newpoint;
-        });
-
-        // Bulk load the points
-        // bulk_load_stable ensures that the ordering of points is conserved, assuming no precise overlap
-        let delaunay = DelaunayTriangulation::<Point2<f64>>::bulk_load_stable(points).unwrap();
+        let delaunay = create_delaunay(points_array, periodic, &box_lengths);
 
         boop_vectors
             .axis_iter_mut(Axis(0))
@@ -1205,41 +1196,7 @@ mod rust_fn {
         let mut neighbour_counts_vector: Vec<usize> = vec![0; n_particles];
         let mut nn_distances_vector = vec![0.0; n_particles];
 
-        // Enforce periodicity by adding copies.
-        let mut points: Vec<Point2<f64>> = vec![Point2::new(0.0, 0.0); 9 * n_particles];
-
-        points.par_iter_mut().enumerate().for_each(|(i, pointi)| {
-            let index = i % n_particles;
-            let quotient = i / n_particles;
-            let nx = match quotient / 3 {
-                0 => 0.0,
-                1 => -1.0,
-                2 => 1.0,
-                _ => 2.0,
-            };
-            let ny = match quotient % 3 {
-                0 => 0.0,
-                1 => -1.0,
-                2 => 1.0,
-                _ => 2.0,
-            };
-
-            assert!(nx < 2.0 && ny < 2.0, "Unexpected error when cloning boxes.");
-
-            let xi = points_array[[index, 0]];
-            let yi = points_array[[index, 1]];
-
-            let shifted_x: f64 = xi + nx * box_size_x;
-            let shifted_y: f64 = yi + ny * box_size_y;
-
-            let newpoint: Point2<f64> = Point2::new(shifted_x, shifted_y);
-
-            *pointi = newpoint;
-        });
-
-        // Bulk load the points
-        // bulk_load_stable ensures that the ordering of points is conserved, assuming no precise overlap
-        let delaunay = DelaunayTriangulation::<Point2<f64>>::bulk_load_stable(points).unwrap();
+        let delaunay = create_delaunay(points_array, periodic, &box_lengths);
 
         if voronoi_areas {
             areas_vector.par_iter_mut().enumerate().for_each(|(i, voronoi_area_i)| {
@@ -1362,6 +1319,186 @@ mod rust_fn {
         periodic: bool
     ) -> Array<f64, Dim<[usize; 2]>> {
         // get the needed parameters from the input
+        let box_lengths = vec![box_size_x, box_size_y];
+        
+        // Create delaunay triangulation, and count total number of faces inside to create the output array
+        let delaunay = create_delaunay(points_array, periodic, &box_lengths);
+        let n_faces = delaunay.num_inner_faces();
+        let mut furthest_sites =  Array::<f64, _>::zeros((n_faces, 3).f());
+        
+        // Go through delaunay
+        delaunay.inner_faces().into_iter()
+        .zip(furthest_sites.axis_iter_mut(Axis(0)))
+        .par_bridge()
+        .into_par_iter()
+        .for_each(|(face_i, mut site_i)| {
+            let circumcenter = face_i.circumcenter();
+            site_i[[0]] = circumcenter.x;
+            site_i[[1]] = circumcenter.y;
+            
+            site_i[[2]] = INFINITY;
+            
+            for vertex in face_i.vertices() {
+                let vertex_coords = vertex.position();
+                let distance = hypot(vertex_coords.x - circumcenter.x, vertex_coords.y - circumcenter.y);
+                if distance <= site_i[[2]] {
+                    site_i[[2]] = distance;
+                }
+            }
+            
+         });
+        
+        return furthest_sites;
+        
+    }
+    
+    pub fn cluster_by_distance(points_array: &ArrayViewD<'_, f64>, threshold: f64, box_lengths: &Vec<f64>, periodic: bool) -> Vec<usize> {
+        // tag particles by cluster they belong to, using a single threshold distance throughout
+        
+        let npoints = points_array.shape()[0];
+        let ndim = points_array.shape()[1];
+
+        assert!(npoints > 1);
+        assert!(ndim == 2); // Need to implement/find delaunay in 3d
+        
+        let mut cluster_id: Vec<usize> = (0..npoints).collect();
+        let mut done = false;
+        
+        // Make this into a LeftRight here and in point variance https://stackoverflow.com/questions/33390395/can-a-function-return-different-types-depending-on-conditional-statements-in-the
+        if ndim == 2 {
+            
+            let mut delaunay = create_delaunay_with_tags(points_array, &cluster_id, periodic, &box_lengths);
+            while !done {
+                let change_list = Arc::new(RwLock::new(Vec::new()));
+
+                cluster_id.par_iter_mut().enumerate().for_each( | (i, id)  |  {
+                    // In this scenario, the from_index is safe because only the n_particles first values are explored out of 9 times that
+                    let fixed_handle = FixedHandleImpl::from_index(i);
+                    let dynamic_handle = delaunay.vertex(fixed_handle);
+                    let outgoing_edges = dynamic_handle.out_edges();
+                    
+                    let xi = points_array[[i, 0]];
+                    let yi = points_array[[i, 1]];
+    
+                    for e in outgoing_edges {
+    
+                        let neigh_vertex = e.to().position();
+                        let dx = neigh_vertex.x - xi;
+                        let dy = neigh_vertex.y - yi;
+                        let mut vector = vec![dx, dy];
+                        if periodic {
+                            ensure_periodicity(&mut vector, &box_lengths);
+                        }
+                        
+                        // Inherit lower of 2 tags if distance is smaller than threshold
+                        let edge_length = hypot(vector[0], vector[1]);
+                        let neigh_tag = e.to().data().tag;
+                        if edge_length <= threshold && *id > neigh_tag {
+                                *id = neigh_tag;
+                                change_list.write().unwrap().push(i);
+                        }
+                        
+                    }
+                    
+                } );
+                
+                // Update tags in delaunay
+                change_list.read().unwrap().clone().into_iter().for_each(| index | {
+                let fixed_handle = FixedHandleImpl::from_index(index);
+                (*delaunay.vertex_data_mut(fixed_handle)).tag = cluster_id[index];
+                if periodic {
+                    for p in 1..8 {
+                        let fixed_handle = FixedHandleImpl::from_index(index + npoints * p);
+                        (*delaunay.vertex_data_mut(fixed_handle)).tag = cluster_id[index];
+                    }
+                }
+                    
+                });
+
+                done = change_list.read().unwrap().len() == 0;
+            }
+            
+        } else {
+            panic!("Not implemented yet!");
+        }
+        
+        return cluster_id;
+        
+    }
+    
+    pub struct PointWithTag<T> {
+        position: Point2<f64>,
+        tag: T,
+    }
+    
+    impl<T> Copy for PointWithTag<T> where T: Copy {}
+    impl<T> Clone for PointWithTag<T> where T: Copy {
+        fn clone(&self) -> Self {
+            *self
+        }
+    }
+    
+    impl<T: Display> HasPosition for PointWithTag<T> {
+        type Scalar = f64;
+    
+        fn position(&self) -> Point2<f64> {
+            self.position
+        }
+    }
+    
+    pub fn create_delaunay_with_tags<T: Display + Send + Sync + Copy>(points_array: &ArrayViewD<'_, f64>, tags: &Vec<T>, periodic: bool, box_lengths: &Vec<f64>) 
+    -> DelaunayTriangulation<PointWithTag<T>> {
+        // Delaunay triangulation where each point carries data with some arbitrary type
+        
+        // get the needed parameters from the input
+        let n_particles = points_array.shape()[0];
+        
+        let n_loop = if periodic { 9 * n_particles } else { n_particles };
+
+        let default_tag = tags[0];
+        // Enforce periodicity by adding copies.
+        let mut tagged_points: Vec<PointWithTag<T>> = vec![PointWithTag { position: Point2::new(0.0, 0.0), tag: default_tag}; n_loop];
+
+        tagged_points.par_iter_mut().enumerate().for_each(|(i, tagged_pointi)| {
+            let index = i % n_particles;
+            let quotient = i / n_particles;
+            let nx = match quotient / 3 {
+                0 => 0.0,
+                1 => -1.0,
+                2 => 1.0,
+                _ => 2.0,
+            };
+            let ny = match quotient % 3 {
+                0 => 0.0,
+                1 => -1.0,
+                2 => 1.0,
+                _ => 2.0,
+            };
+
+            assert!(nx < 2.0 && ny < 2.0, "Unexpected error when cloning boxes.");
+
+            let xi = points_array[[index, 0]];
+            let yi = points_array[[index, 1]];
+
+            let shifted_x: f64 = xi + nx * box_lengths[0];
+            let shifted_y: f64 = yi + ny * box_lengths[1];
+
+            let newpoint: Point2<f64> = Point2::new(shifted_x, shifted_y);
+
+            tagged_pointi.position = newpoint;
+            tagged_pointi.tag = tags[index];
+        });
+
+        // Bulk load the points
+        // bulk_load_stable ensures that the ordering of points is conserved, assuming no precise overlap
+        let tagged_delaunay = DelaunayTriangulation::<PointWithTag<T>>::bulk_load_stable(tagged_points).unwrap();
+        
+        return tagged_delaunay;
+    }
+    
+    pub fn create_delaunay(points_array: &ArrayViewD<'_, f64>, periodic: bool, box_lengths: &Vec<f64>) -> DelaunayTriangulation<Point2<f64>> {
+        
+        // get the needed parameters from the input
         let n_particles = points_array.shape()[0];
         
         let n_loop = if periodic { 9 * n_particles } else { n_particles };
@@ -1390,8 +1527,8 @@ mod rust_fn {
             let xi = points_array[[index, 0]];
             let yi = points_array[[index, 1]];
 
-            let shifted_x: f64 = xi + nx * box_size_x;
-            let shifted_y: f64 = yi + ny * box_size_y;
+            let shifted_x: f64 = xi + nx * box_lengths[0];
+            let shifted_y: f64 = yi + ny * box_lengths[1];
 
             let newpoint: Point2<f64> = Point2::new(shifted_x, shifted_y);
 
@@ -1401,34 +1538,8 @@ mod rust_fn {
         // Bulk load the points
         // bulk_load_stable ensures that the ordering of points is conserved, assuming no precise overlap
         let delaunay = DelaunayTriangulation::<Point2<f64>>::bulk_load_stable(points).unwrap();
-
-        let n_faces = delaunay.num_inner_faces();
         
-        let mut furthest_sites =  Array::<f64, _>::zeros((n_faces, 3).f());
-        
-        delaunay.inner_faces().into_iter()
-        .zip(furthest_sites.axis_iter_mut(Axis(0)))
-        .par_bridge()
-        .into_par_iter()
-        .for_each(|(face_i, mut site_i)| {
-            let circumcenter = face_i.circumcenter();
-            site_i[[0]] = circumcenter.x;
-            site_i[[1]] = circumcenter.y;
-            
-            site_i[[2]] = INFINITY;
-            
-            for vertex in face_i.vertices() {
-                let vertex_coords = vertex.position();
-                let distance = hypot(vertex_coords.x - circumcenter.x, vertex_coords.y - circumcenter.y);
-                if distance <= site_i[[2]] {
-                    site_i[[2]] = distance;
-                }
-            }
-            
-         });
-        
-        return furthest_sites;
-        
+        return delaunay;
     }
     
     pub fn point_variances(points: &ArrayViewD<'_, f64>, radii: &ArrayView1<'_, f64>, n_samples: usize) -> Vec<f64> {
