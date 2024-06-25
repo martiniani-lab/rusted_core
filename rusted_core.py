@@ -50,7 +50,7 @@ def main(input_file,
         else:
             raise NotImplementedError("Delimiter not identified")
         
-        points = np.loadtxt(input_file, delimiter=delimiter)[:,columns]
+        points = np.loadtxt(input_file, delimiter=delimiter, skiprows=skip)[:,columns]
         if fields_columns is not None:
             fields =  np.loadtxt(input_file, delimiter=delimiter)[:,fields_columns]
     else:
@@ -283,6 +283,8 @@ if __name__ == '__main__':
         default=first two", default = None)
     parser.add_argument("-fcol", "--fields_columns", nargs = "+", type = int, help = "indices of columns to use for fields to correlate\
         default=None", default = None)
+    parser.add_argument("-s", "--skip", type = int, help = "Number of lines to skip in file\
+        default = 0", default = 0)
     parser.add_argument("--n_cpus", type=int, help="Number of cpus to use for computation\
         default = os.cpu_count", default=os.cpu_count())
     parser.add_argument("--phi", type=float, help = "Packing fraction, used to determine radius\
@@ -300,6 +302,8 @@ if __name__ == '__main__':
         default = False", default = False)
     parser.add_argument("--vmaxmax", type=float, help = "Vmax at which maps are cropped\
         default = 1e9", default = 1e9)
+    parser.add_argument("-o", "--output_path", type=str, help="Path to output directory\
+        Default = here", default = "")
     
     args = parser.parse_args()
     
@@ -332,6 +336,7 @@ if __name__ == '__main__':
         fields_columns = np.array(fields_columns_args)
     else:
         fields_columns = None
+    skip = args.skip
     phi = args.phi
     box_size = args.box_size
     bin_width = args.bin_width
@@ -340,11 +345,12 @@ if __name__ == '__main__':
     
     logscaleplot = args.logscaleplot
     vmaxmax = args.vmaxmax
+    output_path = args.output_path
     
     main(input_file,
-         columns = columns, fields_columns = fields_columns, phi = phi, starting_box_size=box_size,
+         columns = columns, fields_columns = fields_columns, skip = skip, phi = phi, starting_box_size=box_size,
          bin_width=bin_width, periodic = periodic, connected=connected,
          rdf = rdf, pcf = pcf, voronoi_quantities = voronoi_quantities, compute_boops=compute_boops, orientational_cf = orientational_cf, compute_furthest_sites = compute_furthest_sites,
          metric_clusters= metric_clusters,
          orientation_order = orientation_order, boop_orders= boop_orders, cluster_threshold = cluster_threshold,
-         logscaleplot = logscaleplot, vmaxmax = vmaxmax)
+         logscaleplot = logscaleplot, vmaxmax = vmaxmax, output_path = output_path)

@@ -1403,6 +1403,7 @@ mod rust_fn {
                 } );
                 
                 // Update tags in delaunay
+                // TODO make this part better
                 change_list.read().unwrap().clone().into_iter().for_each(| index | {
                 let fixed_handle = FixedHandleImpl::from_index(index);
                 (*delaunay.vertex_data_mut(fixed_handle)).tag = cluster_id[index];
