@@ -360,19 +360,48 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         py: Python<'py>,
         x: Bound<'py, PyArrayDyn<f64>>,
         radii: Bound<'py, PyArray1<f64>>,
-        n_samples: usize
+        box_size: f64,
+        n_samples: usize,
+        periodic: bool
     ) -> Bound<'py, PyArray1<f64>> {
         // First we convert the Python numpy array into Rust ndarray
         // Here, you can specify different array sizes and types.
         let array = unsafe { x.as_array() }; // Convert to ndarray type
         let radii = unsafe { radii.as_array() }; // Convert to ndarray type
 
+        let ndim = array.shape()[1];
+        
         // Mutate the data
         // No need to return any value as the input data is mutated
-        let reduced_variances = rust_fn::point_variances(&array, &radii, n_samples);
+        let reduced_variances = rust_fn::point_variances(&array, &radii, &vec![box_size; ndim], n_samples, periodic);
         reduced_variances.into_pyarray_bound(py)
     }
 
+    #[pyfn(m)]
+    fn metric_neighbors<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        radii: &Bound<'py, PyArray1<f64>>,
+        threshold: f64,
+        box_size: f64,
+        periodic: bool
+    ) -> Bound<'py, PyArray1<usize>> {
+        
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+        let radii_array = unsafe { radii.as_array() }; // Same for radii
+        
+        let neighbor_counts = rust_fn::count_metric_neighbors(
+            &array,
+            &radii_array,
+            threshold,
+            &vec![box_size; 2],
+            periodic
+        );
+        let neighbor_counts = PyArray1::from_vec_bound(py, neighbor_counts);
+        
+        return neighbor_counts;
+    }
+    
     Ok(())
 }
 
@@ -399,7 +428,7 @@ mod rust_fn {
     use geo::{LineString, Polygon};
     
     use rand::Rng;
-    use rstar::RTree;
+    use rstar::{RTree, RTreeObject, AABB};
 
     // Vectors of RwLocks cannot be initialized with a clone!
     macro_rules! vec_no_clone {
@@ -660,6 +689,8 @@ mod rust_fn {
                     ensure_periodicity(&mut r_ij, &box_lengths);
                 }
 
+                // XXX Probably something off for aperiodic in these numbers here? TODO check.
+                
                 // determine the relevant bin, and update the count at that bin
                 let index_x = ((r_ij[0] + 0.5 * box_size_x) / binsize).floor() as usize;
                 let index_y = ((r_ij[1] + 0.5 * box_size_y) / binsize).floor() as usize;
@@ -1543,7 +1574,7 @@ mod rust_fn {
         return delaunay;
     }
     
-    pub fn point_variances(points: &ArrayViewD<'_, f64>, radii: &ArrayView1<'_, f64>, n_samples: usize) -> Vec<f64> {
+    pub fn point_variances(points: &ArrayViewD<'_, f64>, radii: &ArrayView1<'_, f64>, box_lengths: &Vec<f64>, n_samples: usize, periodic: bool) -> Vec<f64> {
 
         let n_radii = radii.shape()[0];
         let means  = vec_no_clone![Arc::new(RwLock::new(0.0_f64)); n_radii];
@@ -1554,12 +1585,13 @@ mod rust_fn {
 
         assert!(npoints > 1);
         assert!(ndim < 4);
+        assert!(box_lengths.len() == ndim);
 
         if ndim == 2 { // 2D case
 
             // Construct the R*-tree, taking into account periodic boundary conditions
             // See https://en.wikipedia.org/wiki/R-tree and https://en.wikipedia.org/wiki/R*-tree
-            let rtree_positions = compute_periodic_rstar_tree(&points, 1., 1.);
+            let rtree_positions = compute_periodic_rstar_tree(&points, box_lengths[0], box_lengths[1], periodic);
 
             // Throw points at random: this can be parallelized if necessary
             radii.to_vec().into_iter().enumerate().for_each(|(current_index,radius)| {
@@ -1584,7 +1616,7 @@ mod rust_fn {
 
         } else { // 3D case
 
-            let rtree_positions = compute_periodic_rstar_tree_3d(&points, 1., 1., 1.);
+            let rtree_positions = compute_periodic_rstar_tree_3d(&points, box_lengths[0], box_lengths[1], box_lengths[2], periodic);
 
             // Throw points at random: this can be parallelized if necessary
             radii.to_vec().into_iter().enumerate().for_each(|(current_index,radius)| {
@@ -1621,6 +1653,69 @@ mod rust_fn {
         return reduced_variances;
     }
 
+    pub fn count_metric_neighbors(points: &ArrayViewD<'_, f64>, radii: &ArrayView1<'_, f64>, threshold: f64, box_lengths: &Vec<f64>, periodic: bool) -> Vec<usize> {
+        
+        let npoints = points.shape()[0];
+        let ndim = points.shape()[1];
+        
+        let mut neighbor_counts = vec!(0; npoints);
+        
+        assert!(npoints > 1);
+        assert!(ndim < 4);
+        assert!(box_lengths.len() == ndim);
+        
+        let max_radius = *radii.into_par_iter().max_by(|a, b| a.total_cmp(b)).unwrap();
+
+        if ndim == 2 { // 2D case
+
+            // Construct the R*-tree, taking into account periodic boundary conditions
+            // See https://en.wikipedia.org/wiki/R-tree and https://en.wikipedia.org/wiki/R*-tree
+            let rtree_positions = compute_periodic_rstar_tree(&points, box_lengths[0], box_lengths[1], periodic);
+
+            // XXX HERE
+            
+            // Throw points at random: this can be parallelized if necessary
+            radii.to_vec().into_par_iter().zip(neighbor_counts.par_iter_mut()).enumerate().for_each(|(current_index,(radius, count))| {
+                rtree_positions.nearest_neighbor_iter_with_distance_2(&[points[[current_index,0]], points[[current_index,1]]])
+                .skip(1)
+                .for_each(| (neighbor, dist2) | {
+                    // XXX Need other radius as well here: decorated tree necessary...
+                    // XXX Probably doable like Delaunay with tags using this https://docs.rs/rstar/latest/rstar/trait.RTreeObject.html
+                });
+            });
+
+        } else { // 3D case
+
+            let rtree_positions = compute_periodic_rstar_tree_3d(&points, 1., 1., 1., periodic);
+
+            // Throw points at random: this can be parallelized if necessary
+            radii.to_vec().into_iter().enumerate().for_each(|(current_index,radius)| {
+                (0..n_samples).into_par_iter().for_each( |_sample| {
+
+                    let mut rng = rand::thread_rng();
+
+                    let mut random: f64 = rng.gen();
+                    let x_center = random; 
+                    random = rng.gen();
+                    let y_center = random;
+                    random = rng.gen();
+                    let z_center = random;
+
+                    let r_center = vec![x_center, y_center, z_center];
+                    let count = count_points_in_ball(&rtree_positions, r_center, radius);
+
+                    *means.get(current_index).unwrap().write().unwrap() += count as f64;
+                    *means2.get(current_index).unwrap().write().unwrap() += (count*count) as f64;
+                    
+                });
+            });
+        }
+        
+        
+        return neighbor_counts;
+        
+    }
+    
     pub fn count_points_in_disk(rtree: &RTree<[f64;2]>, r_center: Vec<f64>, radius: f64) -> usize {
 
         let centerpoint = [r_center[0], r_center[1]];
@@ -1650,6 +1745,7 @@ mod rust_fn {
         positions: &ArrayViewD<'_, f64>,
         box_size_x: f64,
         box_size_y: f64,
+        periodic: bool
     ) -> RTree<[f64;2]> {
 
 
@@ -1658,9 +1754,10 @@ mod rust_fn {
         // let mut points_vector: Arc<RwLock<Vec<Point2<f64>>>> = Arc::new(RwLock::new(Vec::new()));
         let points_vector: Arc<RwLock<Vec<[f64;2]>>> = Arc::new(RwLock::new(Vec::new()));
 
+        let n_copies: usize = if periodic { 9 } else { 1 };
         // Get the number of particles from positions, and consider 9 copies of the system to take into account the PBCs
         let n_particles = positions.shape()[0];
-        (0..9*n_particles).into_par_iter().for_each(|i| {
+        (0..n_copies*n_particles).into_par_iter().for_each(|i| {
         // for i in 0..9 * n_particles {
             let index = i % n_particles;
             let quotient = i / n_particles;
@@ -1708,7 +1805,8 @@ mod rust_fn {
         positions: &ArrayViewD<'_, f64>,
         box_size_x: f64,
         box_size_y: f64,
-        box_size_z: f64
+        box_size_z: f64,
+        periodic: bool
     ) -> RTree<[f64;3]> {
 
 
@@ -1717,9 +1815,10 @@ mod rust_fn {
         // let mut points_vector: Arc<RwLock<Vec<Point3<f64>>>> = Arc::new(RwLock::new(Vec::new()));
         let points_vector: Arc<RwLock<Vec<[f64;3]>>> = Arc::new(RwLock::new(Vec::new()));
 
-        // Get the number of particles from positions, and consider 9 copies of the system to take into account the PBCs
+        // Get the number of particles from positions, and consider 27 copies of the system to take into account the PBCs
+        let n_copies: usize = if periodic { 27 } else { 1 };
         let n_particles = positions.shape()[0];
-        (0..27*n_particles).into_par_iter().for_each(|i| {
+        (0..n_copies*n_particles).into_par_iter().for_each(|i| {
 
             let index = i % n_particles;
             let quotient = i / n_particles;
@@ -1774,5 +1873,23 @@ mod rust_fn {
 
         rtree
     }
+    
+    
+    pub struct ListPointWithTag<T, const n:usize> {
+        position: [f64; n],
+        tag: T,
+    }
+    
+    impl <T: Display, const n: usize > RTreeObject for ListPointWithTag<T,n>
+    {
+        type Envelope = AABB<[f64; n]>;
+
+        fn envelope(&self) -> Self::Envelope
+        {
+            AABB::from_point(self.position)
+        }
+    }
+    
+    // XXX Make rtree construction with these baddies
     
 }

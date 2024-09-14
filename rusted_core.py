@@ -35,6 +35,8 @@ def main(input_file,
         points = hkl.load(input_file)[:,columns]
         if fields_columns is not None:
             fields =  hkl.load(input_file)[:,fields_columns]
+    elif '.csv' in file_name:
+        points = np.loadtxt(input_file, delimiter=',')
     elif '.txt' in file_name:
         
         with open(input_file, 'r') as file:
@@ -44,9 +46,9 @@ def main(input_file,
         if ',' in first_line:
             delimiter = ','
         elif "\t" in first_line:
-            delimiter = "\t"
+            delimiter = None
         elif ' ' in first_line:
-            delimiter = ' '
+            delimiter = None
         else:
             raise NotImplementedError("Delimiter not identified")
         
@@ -95,6 +97,17 @@ def main(input_file,
             cluster_id = rust.cluster_by_distance(points, threshold, boxsize, periodic)
             
             np.savetxt(os.path.join(output_path,file_name+'_cluster_id.csv'), cluster_id, fmt="%d")
+            
+            # Output number of particles and gyration radius of each cluster in a txt file
+            distinct_cluster_ids, cluster_counts = np.unique(cluster_id, return_counts=True)
+            cluster_radii = []
+            for index in distinct_cluster_ids:
+                # XXX Put that on the rust side with PBCs if needed
+                cluster_points = points[np.where(cluster_id == index)]
+                cluster_radius = np.sqrt(np.mean(np.linalg.norm(cluster_points - np.mean(cluster_points),axis=-1)**2)) / (2.0 * radius)
+                cluster_radii.append(cluster_radius)
+            cluster_radii = np.array(cluster_radii)
+            np.savetxt(os.path.join(output_path,file_name+'_cluster_data.txt'), np.vstack([cluster_counts, cluster_radii]).T, fmt="%d %f")
         
         if voronoi_quantities:
         
