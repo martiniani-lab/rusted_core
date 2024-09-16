@@ -428,7 +428,7 @@ mod rust_fn {
     use geo::{LineString, Polygon};
     
     use rand::Rng;
-    use rstar::{RTree, RTreeObject, AABB, Point, primitives::GeomWithData};
+    use rstar::{RTree, primitives::GeomWithData};
 
     // Vectors of RwLocks cannot be initialized with a clone!
     macro_rules! vec_no_clone {
@@ -1673,14 +1673,17 @@ mod rust_fn {
             let rtree_positions = compute_decorated_rstar_tree(&points, &radii, box_lengths[0], box_lengths[1], periodic);
 
             radii.to_vec().into_par_iter().zip(neighbor_counts.par_iter_mut()).enumerate().for_each(|(current_index,(radius, count))| {
-                rtree_positions.nearest_neighbor_iter_with_distance_2(&[points[[current_index,0]], points[[current_index,1]]])
-                .skip(1)
-                .for_each(| (neighbor, dist2) | {
+                let mut neighbor_with_distance_2_iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&[points[[current_index,0]], points[[current_index,1]]]).skip(1);
+                let mut still_neighbors = true;
+                while still_neighbors {
+                    let (neighbor, dist2) = neighbor_with_distance_2_iter.next().unwrap();
                     let neighbor_radius = neighbor.data;
-                    if dist2 < (radius + neighbor_radius).powi(2) {
+                    if dist2 <= threshold * (radius + neighbor_radius).powi(2) {
                         *count += 1;
+                    } else if dist2 >= threshold * (radius + max_radius).powi(2) {
+                        still_neighbors = false;
                     }
-                });
+                }
             });
 
         } else { // 3D case
@@ -1688,14 +1691,17 @@ mod rust_fn {
             let rtree_positions = compute_decorated_rstar_tree_3d(&points, &radii, box_lengths[0], box_lengths[1], box_lengths[2], periodic);
 
             radii.to_vec().into_par_iter().zip(neighbor_counts.par_iter_mut()).enumerate().for_each(|(current_index,(radius, count))| {
-                rtree_positions.nearest_neighbor_iter_with_distance_2(&[points[[current_index,0]], points[[current_index,1]], points[[current_index,2]]])
-                .skip(1)
-                .for_each(| (neighbor, dist2) | {
+                let mut neighbor_with_distance_2_iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&[points[[current_index,0]], points[[current_index,1]], points[[current_index, 2]]]).skip(1);
+                let mut still_neighbors = true;
+                while still_neighbors {
+                    let (neighbor, dist2) = neighbor_with_distance_2_iter.next().unwrap();
                     let neighbor_radius = neighbor.data;
-                    if dist2 < (radius + neighbor_radius).powi(2) {
+                    if dist2 <= threshold * (radius + neighbor_radius).powi(2) {
                         *count += 1;
+                    } else if dist2 >= threshold * (radius + max_radius).powi(2) {
+                        still_neighbors = false;
                     }
-                });
+                }
             });
             
         }
