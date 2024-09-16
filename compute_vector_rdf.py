@@ -117,7 +117,7 @@ if periodic:
     center = int(vector_rdf.shape[0]/2)
     width = int(vector_rdf.shape[1]/8)
 else:
-    center = int(vector_rdf.shape[0]/4)
+    center = int(vector_rdf.shape[0]/2)
     width = int(vector_rdf.shape[1]/16)
 
 fig = plt.figure(figsize=(10,10))

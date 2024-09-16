@@ -208,8 +208,8 @@ def main(input_file,
                 center = int(vector_rdf.shape[0]/2)
                 width = int(vector_rdf.shape[1]/2)
             else:
-                center = int(vector_rdf.shape[0]/4)
-                width = int(vector_rdf.shape[1]/4)
+                center = int(vector_rdf.shape[0]/2)
+                width = int(vector_rdf.shape[1]/2)
                 
             fig = plt.figure(figsize=(10,10))
             ax = fig.gca()
