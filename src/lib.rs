@@ -1,5 +1,5 @@
-use ndarray::Dim;
-use numpy::{PyArray, PyArrayMethods, PyArray1, PyArray2, PyArray3, PyArrayDyn, IntoPyArray};
+use ndarray::{Array,Dim};
+use numpy::{IntoPyArray, PyArray, PyArray1, PyArray2, PyArray3, PyArrayDyn, PyArrayMethods};
 use pyo3::prelude::{pymodule, PyModule, PyResult, Python, Bound};
 
 // NOTE
@@ -389,6 +389,33 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         
         let array = unsafe { points.as_array() }; // Convert to ndarray type
         let radii_array = unsafe { radii.as_array() }; // Same for radii
+        
+        let neighbor_counts = rust_fn::count_metric_neighbors(
+            &array,
+            &radii_array,
+            threshold,
+            &vec![box_size; 2],
+            periodic
+        );
+        let neighbor_counts = PyArray1::from_vec_bound(py, neighbor_counts);
+        
+        return neighbor_counts;
+    }
+    
+    #[pyfn(m)]
+    fn monodisperse_metric_neighbors<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        radius: f64,
+        threshold: f64,
+        box_size: f64,
+        periodic: bool
+    ) -> Bound<'py, PyArray1<usize>> {
+        
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+        let n_particles = array.shape()[0];
+        let radii_array_owned = Array::from_elem(n_particles, radius);
+        let radii_array = radii_array_owned.view();
         
         let neighbor_counts = rust_fn::count_metric_neighbors(
             &array,
