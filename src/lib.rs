@@ -31,7 +31,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
         // Mutate the data
         // No need to return any value as the input data is mutated
-        let vector_rdf = rust_fn::compute_vector_rdf2d(&array, box_size, binsize, periodic);
+        let vector_rdf = rust_fn::compute_vector_rdf_2d(&array, box_size, box_size, binsize, periodic);
         let array_rdf = PyArray2::from_array_bound(py, &vector_rdf);
 
         return array_rdf;
@@ -51,7 +51,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
         // Mutate the data
         // No need to return any value as the input data is mutated
-        let vector_rdf = rust_fn::compute_vector_rdf3d(&array, box_size, binsize, periodic);
+        let vector_rdf = rust_fn::compute_vector_rdf_3d(&array, box_size, box_size, box_size, binsize, periodic);
         let array_rdf = PyArray3::from_array_bound(py, &vector_rdf);
 
         return array_rdf;
@@ -429,6 +429,48 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         return neighbor_counts;
     }
     
+    #[pyfn(m)]
+    fn compute_bounded_vector_rdf2d<'py>(
+        py: Python<'py>,
+        points: Bound<'py, PyArrayDyn<f64>>,
+        box_size: f64,
+        binsize: f64,
+        radial_bound: f64,
+        periodic: bool,
+    ) -> Bound<'py, PyArray2<f64>> {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+
+        // Mutate the data
+        // No need to return any value as the input data is mutated
+        let vector_rdf = rust_fn::compute_bounded_vector_rdf_2d(&array, box_size, box_size, binsize, radial_bound, periodic);
+        let array_rdf = PyArray2::from_array_bound(py, &vector_rdf);
+
+        return array_rdf;
+    }
+    
+    #[pyfn(m)]
+    fn compute_bounded_vector_rdf3d<'py>(
+        py: Python<'py>,
+        points: Bound<'py, PyArrayDyn<f64>>,
+        box_size: f64,
+        binsize: f64,
+        radial_bound: f64,
+        periodic: bool,
+    ) -> Bound<'py, PyArray3<f64>> {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+
+        // Mutate the data
+        // No need to return any value as the input data is mutated
+        let vector_rdf = rust_fn::compute_bounded_vector_rdf_3d(&array, box_size, box_size, box_size, binsize, radial_bound, periodic);
+        let array_rdf = PyArray3::from_array_bound(py, &vector_rdf);
+
+        return array_rdf;
+    }
+    
     Ok(())
 }
 
@@ -465,24 +507,7 @@ mod rust_fn {
         }};
     }
 
-    pub fn compute_vector_rdf2d(
-        points: &ArrayViewD<'_, f64>,
-        box_size: f64,
-        binsize: f64,
-        periodic: bool,
-    ) -> Array<f64, Dim<[usize; 2]>> {
-        let npoints = points.shape()[0];
-        let ndim = points.shape()[1];
-        assert!(npoints > 1);
-        assert!(ndim == 2);
-
-        // Compute the correlations
-        let rdf = compute_particle_correlations(&points, box_size, box_size, binsize, periodic);
-
-        return rdf;
-    }
-
-    pub fn compute_particle_correlations(
+    pub fn compute_vector_rdf_2d(
         points: &ArrayViewD<'_, f64>,
         box_size_x: f64,
         box_size_y: f64,
@@ -500,6 +525,8 @@ mod rust_fn {
         } else {
             2 * (box_size_x / binsize).ceil() as usize
         };
+        
+        let bc_shift_factor = if periodic { 1.0 } else { 2.0 };
         
         let box_lengths = vec![box_size_x, box_size_y];
 
@@ -520,14 +547,76 @@ mod rust_fn {
                 }
 
                 // determine the relevant bin, and update the count at that bin
-                let index_x = ((r_ij[0] + 0.5 * box_size_x) / binsize).floor() as usize;
-                let index_y = ((r_ij[1] + 0.5 * box_size_y) / binsize).floor() as usize;
+                let index_x = ((r_ij[0] + bc_shift_factor * 0.5 * box_size_x) / binsize).floor() as usize;
+                let index_y = ((r_ij[1] + bc_shift_factor * 0.5 * box_size_y) / binsize).floor() as usize;
                 *(rdf[index_x][index_y].write().unwrap()) += 1.0;
 
                 // Use symmetry
-                let index_x_symm = ((0.5 * box_size_x - r_ij[0]) / binsize).floor() as usize;
-                let index_y_symm = ((0.5 * box_size_y - r_ij[1]) / binsize).floor() as usize;
+                let index_x_symm = ((bc_shift_factor * 0.5 * box_size_x - r_ij[0]) / binsize).floor() as usize;
+                let index_y_symm = ((bc_shift_factor * 0.5 * box_size_y - r_ij[1]) / binsize).floor() as usize;
                 *(rdf[index_x_symm][index_y_symm].write().unwrap()) += 1.0;
+            }
+        });
+        
+        let mut rdf_vector = Array::<f64, _>::zeros((nbins, nbins).f());
+        Zip::indexed(&mut rdf_vector).par_for_each(|(i, j), rdf_val| {
+            *rdf_val = *rdf
+            .get(i)
+            .unwrap()
+            .get(j)
+            .unwrap()
+            .read()
+            .unwrap();
+        });
+
+        return rdf_vector;
+    }
+    
+    
+    pub fn compute_bounded_vector_rdf_2d(
+        points: &ArrayViewD<'_, f64>,
+        box_size_x: f64,
+        box_size_y: f64,
+        binsize: f64,
+        radial_bound: f64,
+        periodic: bool,
+    ) -> Array<f64, Dim<[usize; 2]>> {
+        // Check that the binsize is physical
+        assert!(
+            binsize > 0.0,
+            "Something is wrong with the binsize used for the RDF"
+        );
+
+        let nbins = (2.0 * radial_bound / binsize).ceil() as usize;
+        let box_lengths = vec![box_size_x, box_size_y];
+
+        let n_particles = points.shape()[0];
+        let rdf: Vec<Vec<Arc<RwLock<f64>>>> =
+            vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; nbins];
+            
+        // Construct an rtree here
+        let rtree_positions = compute_periodic_rstar_tree(&points, box_lengths[0], box_lengths[1], periodic);
+
+        (0..n_particles).into_par_iter().for_each(|current_index| {
+            
+            let mut neighbor_with_distance_2_iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&[points[[current_index,0]], points[[current_index,1]]]).skip(1);
+            let mut still_within_bounds = true;
+            while still_within_bounds {
+                let (neighbor, dist2) = neighbor_with_distance_2_iter.next().unwrap();
+                if dist2 > radial_bound.powi(2) {
+                    still_within_bounds = false;
+                } else {
+                    let mut r_ij = vec![neighbor[0] - points[[current_index,0]], neighbor[1] - points[[current_index,1]]];
+                    if periodic {
+                        ensure_periodicity(&mut r_ij, &box_lengths);
+                    }
+                    
+                    // determine the relevant bin, and update the count at that bin
+                    let index_x = ((r_ij[0] + 0.5 * radial_bound) / binsize).floor() as usize;
+                    let index_y = ((r_ij[1] + 0.5 * radial_bound) / binsize).floor() as usize;
+                    *(rdf[index_x][index_y].write().unwrap()) += 1.0;
+                    
+                }
             }
         });
         
@@ -585,6 +674,8 @@ mod rust_fn {
             2 * (box_size_x / binsize).ceil() as usize
         };
         
+        let bc_shift_factor = if periodic { 1.0 } else { 2.0 };
+        
         let box_lengths = vec![box_size_x, box_size_y];
 
         let n_particles = points.shape()[0];
@@ -605,8 +696,8 @@ mod rust_fn {
                 }
 
                 // determine the relevant bin, and update the count at that bin
-                let index_x = ((r_ij[0] + 0.5 * box_size_x) / binsize).floor() as usize;
-                let index_y = ((r_ij[1] + 0.5 * box_size_y) / binsize).floor() as usize;
+                let index_x = ((r_ij[0] + bc_shift_factor * 0.5 * box_size_x) / binsize).floor() as usize;
+                let index_y = ((r_ij[1] + bc_shift_factor * 0.5 * box_size_y) / binsize).floor() as usize;
                 *(rdf[index_x][index_y].write().unwrap()) += 1.0;
 
                 // Compute the orientational part
@@ -619,8 +710,8 @@ mod rust_fn {
                 *(corr[index_x][index_y][1].write().unwrap()) += dpsiny;
 
                 // Use symmetry
-                let index_x_symm = ((0.5 * box_size_x - r_ij[0]) / binsize).floor() as usize;
-                let index_y_symm = ((0.5 * box_size_y - r_ij[1]) / binsize).floor() as usize;
+                let index_x_symm = ((bc_shift_factor * 0.5 * box_size_x - r_ij[0]) / binsize).floor() as usize;
+                let index_y_symm = ((bc_shift_factor * 0.5 * box_size_y - r_ij[1]) / binsize).floor() as usize;
                 *(rdf[index_x_symm][index_y_symm].write().unwrap()) += 1.0;
 
                 *(corr[index_x_symm][index_y_symm][0].write().unwrap()) += dpsinx;
@@ -658,26 +749,7 @@ mod rust_fn {
         return (rdf_vector, corr_vector);
     }
 
-    pub fn compute_vector_rdf3d(
-        points: &ArrayViewD<'_, f64>,
-        box_size: f64,
-        binsize: f64,
-        periodic: bool,
-    ) -> Array<f64, Dim<[usize; 3]>> {
-        let npoints = points.shape()[0];
-        let ndim = points.shape()[1];
-        assert!(npoints > 1);
-        assert!(ndim == 3);
-
-        // Compute the correlations
-        let rdf = compute_particle_correlations_3d(
-            &points, box_size, box_size, box_size, binsize, periodic,
-        );
-
-        return rdf;
-    }
-
-    pub fn compute_particle_correlations_3d(
+    pub fn compute_vector_rdf_3d(
         points: &ArrayViewD<'_, f64>,
         box_size_x: f64,
         box_size_y: f64,
@@ -696,6 +768,8 @@ mod rust_fn {
         } else {
             2 * (box_size_x / binsize).ceil() as usize
         };
+        
+        let bc_shift_factor = if periodic { 1.0 } else { 2.0 };
         
         let box_lengths = vec![box_size_x, box_size_y, box_size_z];
 
@@ -719,20 +793,86 @@ mod rust_fn {
                 // XXX Probably something off for aperiodic in these numbers here? TODO check.
                 
                 // determine the relevant bin, and update the count at that bin
-                let index_x = ((r_ij[0] + 0.5 * box_size_x) / binsize).floor() as usize;
-                let index_y = ((r_ij[1] + 0.5 * box_size_y) / binsize).floor() as usize;
-                let index_z = ((r_ij[2] + 0.5 * box_size_z) / binsize).floor() as usize;
+                let index_x = ((r_ij[0] + bc_shift_factor * 0.5 * box_size_x) / binsize).floor() as usize;
+                let index_y = ((r_ij[1] + bc_shift_factor * 0.5 * box_size_y) / binsize).floor() as usize;
+                let index_z = ((r_ij[2] + bc_shift_factor * 0.5 * box_size_z) / binsize).floor() as usize;
                 *(rdf[index_x][index_y][index_z].write().unwrap()) += 1.0;
 
                 // Use symmetry
-                let index_x_symm = ((0.5 * box_size_x - r_ij[0]) / binsize).floor() as usize;
-                let index_y_symm = ((0.5 * box_size_y - r_ij[1]) / binsize).floor() as usize;
-                let index_z_symm = ((0.5 * box_size_z - r_ij[2]) / binsize).floor() as usize;
+                let index_x_symm = ((bc_shift_factor * 0.5 * box_size_x - r_ij[0]) / binsize).floor() as usize;
+                let index_y_symm = ((bc_shift_factor * 0.5 * box_size_y - r_ij[1]) / binsize).floor() as usize;
+                let index_z_symm = ((bc_shift_factor * 0.5 * box_size_z - r_ij[2]) / binsize).floor() as usize;
                 *(rdf[index_x_symm][index_y_symm][index_z_symm]
                     .write()
                     .unwrap()) += 1.0;
             }
         });
+        
+        // Could make this an array and actually parallelize over all dimensions
+        let mut rdf_vector = Array::<f64, _>::zeros((nbins, nbins, nbins).f());
+        Zip::indexed(&mut rdf_vector).par_for_each(|(i, j, k), rdf_val| {
+            *rdf_val = *rdf
+            .get(i)
+            .unwrap()
+            .get(j)
+            .unwrap()
+            .get(k)
+            .unwrap()
+            .read()
+            .unwrap();
+        });
+
+        return rdf_vector;
+    }
+    
+    pub fn compute_bounded_vector_rdf_3d(
+        points: &ArrayViewD<'_, f64>,
+        box_size_x: f64,
+        box_size_y: f64,
+        box_size_z: f64,
+        binsize: f64,
+        radial_bound: f64,
+        periodic: bool,
+    ) -> Array<f64, Dim<[usize; 3]>> {
+        // Check that the binsize is physical
+        assert!(
+            binsize > 0.0,
+            "Something is wrong with the binsize used for the RDF"
+        );
+
+        let nbins = (2.0 * radial_bound / binsize).ceil() as usize;
+        let box_lengths = vec![box_size_x, box_size_y, box_size_z];
+        
+        let n_particles = points.shape()[0];
+        let rdf: Vec<Vec<Vec<Arc<RwLock<f64>>>>> = vec_no_clone![vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; nbins]; nbins];
+            
+        // Construct an rtree here
+        let rtree_positions = compute_periodic_rstar_tree_3d(&points, box_lengths[0], box_lengths[1], box_lengths[2], periodic);
+
+        (0..n_particles).into_par_iter().for_each(|current_index| {
+            
+            let mut neighbor_with_distance_2_iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&[points[[current_index,0]], points[[current_index,1]], points[[current_index, 2]]]).skip(1);
+            let mut still_within_bounds = true;
+            while still_within_bounds {
+                let (neighbor, dist2) = neighbor_with_distance_2_iter.next().unwrap();
+                if dist2 > radial_bound.powi(2) {
+                    still_within_bounds = false;
+                } else {
+                    let mut r_ij = vec![neighbor[0] - points[[current_index,0]], neighbor[1] - points[[current_index,1]], neighbor[2] - points[[current_index, 2]]];
+                    if periodic {
+                        ensure_periodicity(&mut r_ij, &box_lengths);
+                    }
+                    
+                    // determine the relevant bin, and update the count at that bin
+                    let index_x = ((r_ij[0] + 0.5 * radial_bound) / binsize).floor() as usize;
+                    let index_y = ((r_ij[1] + 0.5 * radial_bound) / binsize).floor() as usize;
+                    let index_z: usize = ((r_ij[2] + 0.5 * radial_bound) / binsize).floor() as usize;
+                    *(rdf[index_x][index_y][index_z].write().unwrap()) += 1.0;
+                    
+                }
+            }
+        });
+
         
         // Could make this an array and actually parallelize over all dimensions
         let mut rdf_vector = Array::<f64, _>::zeros((nbins, nbins, nbins).f());
