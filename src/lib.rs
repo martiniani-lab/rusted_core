@@ -656,8 +656,8 @@ mod rust_fn {
                     }
                     
                     // determine the relevant bin, and update the count at that bin
-                    let index_x = ((r_ij[0] + 0.5 * radial_bound) / binsize).floor() as usize;
-                    let index_y = ((r_ij[1] + 0.5 * radial_bound) / binsize).floor() as usize;
+                    let index_x = ((r_ij[0] + radial_bound) / binsize).floor() as usize;
+                    let index_y = ((r_ij[1] + radial_bound) / binsize).floor() as usize;
                     *(rdf[index_x][index_y].write().unwrap()) += 1.0;
                     
                 }
@@ -694,7 +694,7 @@ mod rust_fn {
 
         let n_particles = points.shape()[0];
         let inter_spacing = (box_size_x * box_size_y / n_particles as f64).sqrt();
-        let radial_bound = nn_bound as f64 * inter_spacing * 2.0;
+        let radial_bound = (nn_bound as f64).sqrt() * inter_spacing * 2.0;
         
         let nbins = (2.0 * radial_bound / binsize).ceil() as usize;
         let box_lengths = vec![box_size_x, box_size_y];
@@ -718,8 +718,8 @@ mod rust_fn {
                 }
                 
                 // determine the relevant bin, and update the count at that bin
-                let index_x = ((r_ij[0] + 0.5 * radial_bound) / binsize).floor() as usize;
-                let index_y = ((r_ij[1] + 0.5 * radial_bound) / binsize).floor() as usize;
+                let index_x = ((r_ij[0] + radial_bound) / binsize).floor() as usize;
+                let index_y = ((r_ij[1] + radial_bound) / binsize).floor() as usize;
                 *(rdf[index_x][index_y].write().unwrap()) += 1.0;
                 
                 counter += 1;
@@ -970,9 +970,9 @@ mod rust_fn {
                     }
                     
                     // determine the relevant bin, and update the count at that bin
-                    let index_x = ((r_ij[0] + 0.5 * radial_bound) / binsize).floor() as usize;
-                    let index_y = ((r_ij[1] + 0.5 * radial_bound) / binsize).floor() as usize;
-                    let index_z: usize = ((r_ij[2] + 0.5 * radial_bound) / binsize).floor() as usize;
+                    let index_x = ((r_ij[0] + radial_bound) / binsize).floor() as usize;
+                    let index_y = ((r_ij[1] + radial_bound) / binsize).floor() as usize;
+                    let index_z: usize = ((r_ij[2] + radial_bound) / binsize).floor() as usize;
                     *(rdf[index_x][index_y][index_z].write().unwrap()) += 1.0;
                     
                 }
@@ -1014,7 +1014,7 @@ mod rust_fn {
 
         let n_particles = points.shape()[0];
         let inter_spacing = (box_size_x * box_size_y * box_size_z / n_particles as f64).cbrt();
-        let radial_bound = nn_bound as f64 * inter_spacing * 2.0;
+        let radial_bound = (nn_bound as f64).cbrt() * inter_spacing * 2.0;
         
         let nbins = (2.0 * radial_bound / binsize).ceil() as usize;
         let box_lengths = vec![box_size_x, box_size_y, box_size_z];
@@ -1038,9 +1038,9 @@ mod rust_fn {
                 }
                 
                 // determine the relevant bin, and update the count at that bin
-                let index_x = ((r_ij[0] + 0.5 * radial_bound) / binsize).floor() as usize;
-                let index_y = ((r_ij[1] + 0.5 * radial_bound) / binsize).floor() as usize;
-                let index_z: usize = ((r_ij[2] + 0.5 * radial_bound) / binsize).floor() as usize;
+                let index_x = ((r_ij[0] + radial_bound) / binsize).floor() as usize;
+                let index_y = ((r_ij[1] + radial_bound) / binsize).floor() as usize;
+                let index_z: usize = ((r_ij[2] + radial_bound) / binsize).floor() as usize;
                 *(rdf[index_x][index_y][index_z].write().unwrap()) += 1.0;
                 
                 counter += 1;
