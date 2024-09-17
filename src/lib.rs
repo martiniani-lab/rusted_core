@@ -57,8 +57,94 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         return array_rdf;
     }
 
+    
     #[pyfn(m)]
-    fn compute_vector_orientation_corr_2d<'py>(
+    fn compute_bounded_vector_rdf2d<'py>(
+        py: Python<'py>,
+        points: Bound<'py, PyArrayDyn<f64>>,
+        box_size: f64,
+        binsize: f64,
+        radial_bound: f64,
+        periodic: bool,
+    ) -> Bound<'py, PyArray2<f64>> {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+
+        // Mutate the data
+        // No need to return any value as the input data is mutated
+        let vector_rdf = rust_fn::compute_bounded_vector_rdf_2d(&array, box_size, box_size, binsize, radial_bound, periodic);
+        let array_rdf = PyArray2::from_array_bound(py, &vector_rdf);
+
+        return array_rdf;
+    }
+    
+    
+    #[pyfn(m)]
+    fn compute_nnbounded_vector_rdf2d<'py>(
+        py: Python<'py>,
+        points: Bound<'py, PyArrayDyn<f64>>,
+        box_size: f64,
+        binsize: f64,
+        nn_bound: usize,
+        periodic: bool,
+    ) -> Bound<'py, PyArray2<f64>> {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+
+        // Mutate the data
+        // No need to return any value as the input data is mutated
+        let vector_rdf = rust_fn::compute_nnbounded_vector_rdf_2d(&array, box_size, box_size, binsize, nn_bound, periodic);
+        let array_rdf = PyArray2::from_array_bound(py, &vector_rdf);
+
+        return array_rdf;
+    }
+    
+    #[pyfn(m)]
+    fn compute_bounded_vector_rdf3d<'py>(
+        py: Python<'py>,
+        points: Bound<'py, PyArrayDyn<f64>>,
+        box_size: f64,
+        binsize: f64,
+        radial_bound: f64,
+        periodic: bool,
+    ) -> Bound<'py, PyArray3<f64>> {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+
+        // Mutate the data
+        // No need to return any value as the input data is mutated
+        let vector_rdf = rust_fn::compute_bounded_vector_rdf_3d(&array, box_size, box_size, box_size, binsize, radial_bound, periodic);
+        let array_rdf = PyArray3::from_array_bound(py, &vector_rdf);
+
+        return array_rdf;
+    }
+    
+    #[pyfn(m)]
+    fn compute_nnbounded_vector_rdf3d<'py>(
+        py: Python<'py>,
+        points: Bound<'py, PyArrayDyn<f64>>,
+        box_size: f64,
+        binsize: f64,
+        nn_bound: usize,
+        periodic: bool,
+    ) -> Bound<'py, PyArray3<f64>> {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+
+        // Mutate the data
+        // No need to return any value as the input data is mutated
+        let vector_rdf = rust_fn::compute_nnbounded_vector_rdf_3d(&array, box_size, box_size, box_size, binsize, nn_bound, periodic);
+        let array_rdf = PyArray3::from_array_bound(py, &vector_rdf);
+
+        return array_rdf;
+    }
+    
+    #[pyfn(m)]
+    fn compute_vector_gyromorphic_corr_2d<'py>(
         py: Python<'py>,
         points: Bound<'py, PyArrayDyn<f64>>,
         box_size: f64,
@@ -73,7 +159,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         // Mutate the data
         // No need to return any value as the input data is mutated
         let (vector_rdf, vector_corr) =
-            rust_fn::compute_vector_orientation_corr_2d(&array, box_size, binsize, periodic, order);
+            rust_fn::compute_vector_gyromorphic_corr_2d(&array, box_size, binsize, periodic, order);
         let array_rdf = PyArray2::from_array_bound(py, &vector_rdf);
         let array_corr = PyArray::from_array_bound(py, &vector_corr);
 
@@ -119,7 +205,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     #[pyfn(m)]
-    fn compute_radial_orientation_corr_2d<'py>(
+    fn compute_radial_gyromorphic_corr_2d<'py>(
         py: Python<'py>,
         points: Bound<'py, PyArrayDyn<f64>>,
         box_size: f64,
@@ -133,7 +219,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
         // Mutate the data
         // No need to return any value as the input data is mutated
-        let (rdf, radial_corr) = rust_fn::compute_radial_orientation_corr_2d(
+        let (rdf, radial_corr) = rust_fn::compute_radial_gyromorphic_corr_2d(
             &array, box_size, box_size, binsize, periodic, order,
         );
         let array_rdf = PyArray::from_vec_bound(py, rdf);
@@ -429,48 +515,6 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         return neighbor_counts;
     }
     
-    #[pyfn(m)]
-    fn compute_bounded_vector_rdf2d<'py>(
-        py: Python<'py>,
-        points: Bound<'py, PyArrayDyn<f64>>,
-        box_size: f64,
-        binsize: f64,
-        radial_bound: f64,
-        periodic: bool,
-    ) -> Bound<'py, PyArray2<f64>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-
-        // Mutate the data
-        // No need to return any value as the input data is mutated
-        let vector_rdf = rust_fn::compute_bounded_vector_rdf_2d(&array, box_size, box_size, binsize, radial_bound, periodic);
-        let array_rdf = PyArray2::from_array_bound(py, &vector_rdf);
-
-        return array_rdf;
-    }
-    
-    #[pyfn(m)]
-    fn compute_bounded_vector_rdf3d<'py>(
-        py: Python<'py>,
-        points: Bound<'py, PyArrayDyn<f64>>,
-        box_size: f64,
-        binsize: f64,
-        radial_bound: f64,
-        periodic: bool,
-    ) -> Bound<'py, PyArray3<f64>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-
-        // Mutate the data
-        // No need to return any value as the input data is mutated
-        let vector_rdf = rust_fn::compute_bounded_vector_rdf_3d(&array, box_size, box_size, box_size, binsize, radial_bound, periodic);
-        let array_rdf = PyArray3::from_array_bound(py, &vector_rdf);
-
-        return array_rdf;
-    }
-    
     Ok(())
 }
 
@@ -633,8 +677,70 @@ mod rust_fn {
 
         return rdf_vector;
     }
+    
+    pub fn compute_nnbounded_vector_rdf_2d(
+        points: &ArrayViewD<'_, f64>,
+        box_size_x: f64,
+        box_size_y: f64,
+        binsize: f64,
+        nn_bound: usize,
+        periodic: bool,
+    ) -> Array<f64, Dim<[usize; 2]>> {
+        // Check that the binsize is physical
+        assert!(
+            binsize > 0.0,
+            "Something is wrong with the binsize used for the RDF"
+        );
 
-    pub fn compute_vector_orientation_corr_2d(
+        let n_particles = points.shape()[0];
+        let inter_spacing = (box_size_x * box_size_y / n_particles as f64).sqrt();
+        let radial_bound = nn_bound as f64 * inter_spacing * 2.0;
+        
+        let nbins = (2.0 * radial_bound / binsize).ceil() as usize;
+        let box_lengths = vec![box_size_x, box_size_y];
+
+        let rdf: Vec<Vec<Arc<RwLock<f64>>>> =
+            vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; nbins];
+            
+        // Construct an rtree here
+        let rtree_positions = compute_periodic_rstar_tree(&points, box_lengths[0], box_lengths[1], periodic);
+
+        (0..n_particles).into_par_iter().for_each(|current_index| {
+            
+            let mut neighbor_iter = rtree_positions.nearest_neighbor_iter(&[points[[current_index,0]], points[[current_index,1]]]).skip(1);
+            let mut counter = 0;
+            while counter < nn_bound {
+                let neighbor = neighbor_iter.next().unwrap();
+
+                let mut r_ij = vec![neighbor[0] - points[[current_index,0]], neighbor[1] - points[[current_index,1]]];
+                if periodic {
+                    ensure_periodicity(&mut r_ij, &box_lengths);
+                }
+                
+                // determine the relevant bin, and update the count at that bin
+                let index_x = ((r_ij[0] + 0.5 * radial_bound) / binsize).floor() as usize;
+                let index_y = ((r_ij[1] + 0.5 * radial_bound) / binsize).floor() as usize;
+                *(rdf[index_x][index_y].write().unwrap()) += 1.0;
+                
+                counter += 1;
+            }
+        });
+        
+        let mut rdf_vector = Array::<f64, _>::zeros((nbins, nbins).f());
+        Zip::indexed(&mut rdf_vector).par_for_each(|(i, j), rdf_val| {
+            *rdf_val = *rdf
+            .get(i)
+            .unwrap()
+            .get(j)
+            .unwrap()
+            .read()
+            .unwrap();
+        });
+
+        return rdf_vector;
+    }
+
+    pub fn compute_vector_gyromorphic_corr_2d(
         points: &ArrayViewD<'_, f64>,
         box_size: f64,
         binsize: f64,
@@ -647,14 +753,14 @@ mod rust_fn {
         assert!(ndim == 2);
 
         // Compute the correlations
-        let (rdf, corr) = compute_particle_orientation_correlations(
+        let (rdf, corr) = compute_particle_gyromorphic_correlations(
             &points, box_size, box_size, binsize, periodic, order,
         );
 
         return (rdf, corr);
     }
 
-    pub fn compute_particle_orientation_correlations(
+    pub fn compute_particle_gyromorphic_correlations(
         points: &ArrayViewD<'_, f64>,
         box_size_x: f64,
         box_size_y: f64,
@@ -891,6 +997,76 @@ mod rust_fn {
         return rdf_vector;
     }
 
+    pub fn compute_nnbounded_vector_rdf_3d(
+        points: &ArrayViewD<'_, f64>,
+        box_size_x: f64,
+        box_size_y: f64,
+        box_size_z: f64,
+        binsize: f64,
+        nn_bound: usize,
+        periodic: bool,
+    ) -> Array<f64, Dim<[usize; 3]>> {
+        // Check that the binsize is physical
+        assert!(
+            binsize > 0.0,
+            "Something is wrong with the binsize used for the RDF"
+        );
+
+        let n_particles = points.shape()[0];
+        let inter_spacing = (box_size_x * box_size_y * box_size_z / n_particles as f64).cbrt();
+        let radial_bound = nn_bound as f64 * inter_spacing * 2.0;
+        
+        let nbins = (2.0 * radial_bound / binsize).ceil() as usize;
+        let box_lengths = vec![box_size_x, box_size_y, box_size_z];
+        
+        let n_particles = points.shape()[0];
+        let rdf: Vec<Vec<Vec<Arc<RwLock<f64>>>>> = vec_no_clone![vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; nbins]; nbins];
+            
+        // Construct an rtree here
+        let rtree_positions = compute_periodic_rstar_tree_3d(&points, box_lengths[0], box_lengths[1], box_lengths[2], periodic);
+
+        (0..n_particles).into_par_iter().for_each(|current_index| {
+            
+            let mut neighbor_iter = rtree_positions.nearest_neighbor_iter(&[points[[current_index,0]], points[[current_index,1]], points[[current_index, 2]]]).skip(1);
+            let mut counter = 0;
+            while counter < nn_bound {
+                let neighbor = neighbor_iter.next().unwrap();
+
+                let mut r_ij = vec![neighbor[0] - points[[current_index,0]], neighbor[1] - points[[current_index,1]], neighbor[2] - points[[current_index, 2]]];
+                if periodic {
+                    ensure_periodicity(&mut r_ij, &box_lengths);
+                }
+                
+                // determine the relevant bin, and update the count at that bin
+                let index_x = ((r_ij[0] + 0.5 * radial_bound) / binsize).floor() as usize;
+                let index_y = ((r_ij[1] + 0.5 * radial_bound) / binsize).floor() as usize;
+                let index_z: usize = ((r_ij[2] + 0.5 * radial_bound) / binsize).floor() as usize;
+                *(rdf[index_x][index_y][index_z].write().unwrap()) += 1.0;
+                
+                counter += 1;
+                
+            
+            }
+        });
+
+        
+        // Could make this an array and actually parallelize over all dimensions
+        let mut rdf_vector = Array::<f64, _>::zeros((nbins, nbins, nbins).f());
+        Zip::indexed(&mut rdf_vector).par_for_each(|(i, j, k), rdf_val| {
+            *rdf_val = *rdf
+            .get(i)
+            .unwrap()
+            .get(j)
+            .unwrap()
+            .get(k)
+            .unwrap()
+            .read()
+            .unwrap();
+        });
+
+        return rdf_vector;
+    }
+    
     pub fn ensure_periodicity(v: &mut Vec<f64>, box_lengths: &Vec<f64>) {
         
         v.iter_mut().zip(box_lengths).for_each(|(coord, box_length)| { 
@@ -1037,7 +1213,7 @@ mod rust_fn {
         return (rdf_vector, field_corrs_vector);
     }
 
-    pub fn compute_radial_orientation_corr_2d(
+    pub fn compute_radial_gyromorphic_corr_2d(
         points: &ArrayViewD<'_, f64>,
         box_size_x: f64,
         box_size_y: f64,

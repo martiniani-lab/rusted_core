@@ -72,7 +72,7 @@ vmaxmax = 2
 
 if ndim == 2:
     # vector_rdf = rust.compute_vector_rdf2d(points, boxsize, binsize, periodic)
-    vector_rdf, vector_orientation = rust.compute_vector_orientation_corr_2d(points, boxsize, binsize, periodic, order)
+    vector_rdf, vector_orientation = rust.compute_vector_gyromorphic_corr_2d(points, boxsize, binsize, periodic, order)
 elif ndim == 3:
     vector_rdf = rust.compute_vector_rdf3d(points, boxsize, binsize, periodic)
     nbins = np.ceil(boxsize/binsize)

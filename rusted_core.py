@@ -11,9 +11,9 @@ from scipy.special import gamma
 
 def main(input_file, 
          columns = np.arange(2), fields_columns = None, output_path = "", skip = 1,
-         rdf = False, pcf = False, voronoi_quantities = False, compute_boops = False, orientational_cf = False, compute_furthest_sites = False,
+         rdf = False, pcf = False, radial_bound = False, nn_bound = False, voronoi_quantities = False, compute_boops = False, gyromorphic_cf = False, compute_furthest_sites = False,
          metric_clusters = False,
-         bin_width = 1/20, phi = None, starting_box_size = None, boop_orders = np.array([6]), orientation_order = 6, cluster_threshold = 1.0,
+         bin_width = 1/20, phi = None, starting_box_size = None, boop_orders = np.array([6]), orientation_order = 6, cluster_threshold = 1.0, radial_bound_value = 0.1, nn_bound_value = 6,
          periodic = True, connected = False,
          logscaleplot = False, vmaxmax = 1e1):
     '''
@@ -193,11 +193,16 @@ def main(input_file,
                 np.savetxt(os.path.join(output_path,file_name+'_radia_corr.csv'), np.vstack([bins, fields_corr]).T )
                 
         if pcf:
-            if orientational_cf:
-                vector_rdf, vector_orientation = rust.compute_vector_orientation_corr_2d(points, boxsize, binsize, periodic, orientation_order)
+            if gyromorphic_cf:
+                vector_rdf, vector_orientation = rust.compute_vector_gyromorphic_corr_2d(points, boxsize, binsize, periodic, orientation_order)
                 vector_orientation = np.sum(vector_orientation**2,axis=-1)
             else:
-                vector_rdf = rust.compute_vector_rdf2d(points, boxsize, binsize, periodic)
+                if radial_bound:
+                    vector_rdf = rust.compute_bounded_vector_rdf2d(points, boxsize, binsize, radial_bound_value, periodic)
+                elif nn_bound:
+                    vector_rdf = rust.compute_nnbounded_vector_rdf2d(points, boxsize, binsize, nn_bound_value, periodic)
+                else:
+                    vector_rdf = rust.compute_vector_rdf2d(points, boxsize, binsize, periodic)
                 
             nbins = np.ceil(boxsize/binsize)
             rho_n = npoints * npoints / ( boxsize * boxsize)
@@ -222,7 +227,7 @@ def main(input_file,
             plt.savefig(output_path+file_name+"_vector_rdf.png", dpi = 300)
             plt.close()
             
-            if orientational_cf:
+            if gyromorphic_cf:
                 vector_orientation /= rho_n * binsize * binsize
                 vector_orientation /= npoints
                 np.savetxt(output_path+file_name+"vector_orientation.csv", vector_orientation)
@@ -275,13 +280,17 @@ if __name__ == '__main__':
         default = false", default = False)
     parser.add_argument("-pcf", "--pair_correlation_function", action = 'store_true', help = "Compute the pcf\
         default = false", default = False)
+    parser.add_argument("-rb", "--radial_bound", action = 'store_true', help = "Compute pcf up to a finite metric bound\
+        default = false", default = False)
+    parser.add_argument("-nnb", "--nn_bound", action = 'store_true', help = "Compute pcf up to a finite neighbor index bound\
+        default = false", default = False)
     parser.add_argument("-voro", "--voronoi_quantities", action="store_true", help = "Compute Voronoi cell areas, number of neighbours, and nn distances\
         default = False", default = False)
     parser.add_argument("-boops", "--compute_boops", action="store_true", help = "Compute Steinhardt's Bond-Orientational Order Parameters\
         default = False", default = False)
     parser.add_argument("--boop_orders", nargs = "+", type = int, help = "BOOP orders to compute\
         default=6", default = None)
-    parser.add_argument("-ocf", "--orientational_cf", action = 'store_true', help = "Compute the ocf\
+    parser.add_argument("-gcf", "--gyromorphic_cf", action = 'store_true', help = "Compute the ocf\
         default = false", default = False)
     parser.add_argument("-oo", "--orientation_order", type = int, help = "OCF order to compute\
         default=6", default = 6)
@@ -302,6 +311,10 @@ if __name__ == '__main__':
         default = os.cpu_count", default=os.cpu_count())
     parser.add_argument("--phi", type=float, help = "Packing fraction, used to determine radius\
         default = None", default = None)
+    parser.add_argument("-rbv", "--radial_bound_value", type = float, help = "Value of finite metric bound, in units of L\
+        default = 0.1", default = 0.1)
+    parser.add_argument("-nnbv", "--nn_bound_value", type = int, help = "Value of finite neighbor index bound\
+        default = 6", default = 6)
     parser.add_argument("-L", "--box_size", type=float, help = "Box size, if exact value known\
         default = None", default = None)
     parser.add_argument("-bw", "--bin_width", type=float, help = "Width of the bins, in units of radii OR typical distances\
@@ -322,6 +335,8 @@ if __name__ == '__main__':
     
     rdf = args.radial_distribution_function
     pcf = args.pair_correlation_function
+    radial_bound = args.radial_bound
+    nn_bound = args.nn_bound
     voronoi_quantities = args.voronoi_quantities
     compute_boops = args.compute_boops
     boop_orders_args = args.boop_orders
@@ -330,7 +345,7 @@ if __name__ == '__main__':
         boop_orders = np.array(boop_orders_args)
     else:
         boop_orders = np.array([6])
-    orientational_cf = args.orientational_cf
+    gyromorphic_cf = args.gyromorphic_cf
     orientation_order = args.orientation_order
     compute_furthest_sites = args.furthest_sites
     metric_clusters = args.metric_clusters
@@ -351,6 +366,8 @@ if __name__ == '__main__':
         fields_columns = None
     skip = args.skip
     phi = args.phi
+    radial_bound_value = args.radial_bound_value
+    nn_bound_value = args.nn_bound_value
     box_size = args.box_size
     bin_width = args.bin_width
     periodic = not args.free_boundary_condition
@@ -363,7 +380,7 @@ if __name__ == '__main__':
     main(input_file,
          columns = columns, fields_columns = fields_columns, skip = skip, phi = phi, starting_box_size=box_size,
          bin_width=bin_width, periodic = periodic, connected=connected,
-         rdf = rdf, pcf = pcf, voronoi_quantities = voronoi_quantities, compute_boops=compute_boops, orientational_cf = orientational_cf, compute_furthest_sites = compute_furthest_sites,
+         rdf = rdf, pcf = pcf, radial_bound=radial_bound, nn_bound=nn_bound, voronoi_quantities = voronoi_quantities, compute_boops=compute_boops, gyromorphic_cf = gyromorphic_cf, compute_furthest_sites = compute_furthest_sites,
          metric_clusters= metric_clusters,
-         orientation_order = orientation_order, boop_orders= boop_orders, cluster_threshold = cluster_threshold,
+         orientation_order = orientation_order, boop_orders= boop_orders, cluster_threshold = cluster_threshold, radial_bound_value=radial_bound_value, nn_bound_value=nn_bound_value,
          logscaleplot = logscaleplot, vmaxmax = vmaxmax, output_path = output_path)

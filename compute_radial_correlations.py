@@ -68,7 +68,7 @@ if ndim == 2:
     np.savetxt(file_name+"_translational_"+str(nK)+".csv", translational)
     
     radial_rdf, corr = rust.compute_radial_correlations_2d(points, translational, boxsize, binsize, periodic, connected)
-    _, or_corr = rust.compute_radial_orientation_corr_2d(points, boxsize, binsize, periodic, order)
+    _, or_corr = rust.compute_radial_gyromorphic_corr_2d(points, boxsize, binsize, periodic, order)
 
 elif ndim == 3:
     
