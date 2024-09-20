@@ -416,7 +416,33 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         
         return array_furthest_sites;
     }
-    
+
+    #[pyfn(m)]
+    fn compute_pnn_distances<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        p: usize,
+        box_size: f64,
+        periodic: bool
+    ) -> Bound<'py, PyArray1<f64>> {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+        
+        assert!(p>0, "Order for pth-nn distribution needs to be natural integer");
+        let ndim = array.shape()[1];
+        let box_lengths = vec!(box_size; ndim);
+
+        let pnn_distances = rust_fn::compute_pnn_distances(
+            &array,
+            p,
+            &box_lengths,
+            periodic
+        );
+        let array_pnn_distances = PyArray1::from_vec_bound(py, pnn_distances);
+        
+        return array_pnn_distances;
+    }
         
     #[pyfn(m)]
     fn cluster_by_distance<'py>(
@@ -1723,6 +1749,53 @@ mod rust_fn {
          });
         
         return furthest_sites;
+        
+    }
+    
+    pub fn compute_pnn_distances(points: &ArrayViewD<'_, f64>, p: usize, box_lengths: &Vec<f64>, periodic: bool) -> Vec<f64> {
+        
+        let npoints = points.shape()[0];
+        let ndim = points.shape()[1];
+        
+        assert!(npoints > 1);
+        assert!(ndim > 1);
+        assert!(ndim < 4);
+        assert!(box_lengths.len() == ndim);
+
+        let mut pnn_distances = vec!(0.0; npoints);
+        
+        if ndim == 2 { // 2D case
+
+            // Construct the R*-tree, taking into account periodic boundary conditions
+            // See https://en.wikipedia.org/wiki/R-tree and https://en.wikipedia.org/wiki/R*-tree
+            let rtree_positions = compute_periodic_rstar_tree(&points, box_lengths[0], box_lengths[1], periodic);
+            
+            pnn_distances.par_iter_mut().enumerate().for_each(|(i, pnn_distance_i)| {
+            
+                let current_point = [points[[i,0]], points[[i,1]]];
+                let mut iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&current_point).skip(p);
+                let (_, dist2) = iter.next().unwrap();
+                *pnn_distance_i = dist2.sqrt();
+            
+            });
+            
+        } else {
+            // Construct the R*-tree, taking into account periodic boundary conditions
+            // See https://en.wikipedia.org/wiki/R-tree and https://en.wikipedia.org/wiki/R*-tree
+            let rtree_positions = compute_periodic_rstar_tree_3d(&points, box_lengths[0], box_lengths[1], box_lengths[2], periodic);
+            
+            pnn_distances.par_iter_mut().enumerate().for_each(|(i, pnn_distance_i)| {
+            
+                let current_point = [points[[i,0]], points[[i,1]], points[[i,2]]];
+                let mut iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&current_point).skip(p);
+                let (_, dist2) = iter.next().unwrap();
+                *pnn_distance_i = dist2.sqrt();
+            
+            });
+            
+        }
+        
+        return pnn_distances;
         
     }
     
