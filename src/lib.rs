@@ -102,6 +102,58 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
     
     #[pyfn(m)]
+    fn compute_pnn_vector_rdf2d<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        p: usize,
+        box_size: f64,
+        binsize: f64,
+        periodic: bool
+    ) -> Bound<'py, PyArray2<f64>> {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+        
+        assert!(p>0, "Order for pth-nn distribution needs to be natural integer");
+
+        let pnn_vector_rdf = rust_fn::compute_pnn_vector_rdf_2d(
+            &array,
+            box_size,
+            box_size,
+            binsize,
+            p,
+            periodic
+        );
+        let array_pnn_rdf = PyArray2::from_array_bound(py, &pnn_vector_rdf);
+        
+        return array_pnn_rdf;
+    }
+    
+    #[pyfn(m)]
+    fn compute_pnn_rdf<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        nn_order: usize,
+        box_size: f64,
+        binsize: f64,
+        periodic: bool
+    ) -> Bound<'py, PyArray1<f64>> {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+        
+        assert!(nn_order>0, "Order for pth-nn distribution needs to be natural integer");
+        let ndim = array.shape()[1];
+        let box_lengths = vec![box_size; ndim];
+        
+
+        let pnn_rdf = rust_fn::compute_pnn_rdf(&array, &box_lengths, binsize, nn_order, periodic);
+        let array_pnn_rdf = PyArray1::from_vec_bound(py, pnn_rdf);
+        
+        return array_pnn_rdf;
+    }
+    
+    #[pyfn(m)]
     fn compute_bounded_vector_rdf3d<'py>(
         py: Python<'py>,
         points: Bound<'py, PyArrayDyn<f64>>,
@@ -719,8 +771,14 @@ mod rust_fn {
         );
 
         let n_particles = points.shape()[0];
-        let inter_spacing = (box_size_x * box_size_y / n_particles as f64).sqrt();
-        let radial_bound = (nn_bound as f64).sqrt() * inter_spacing * 2.0;
+        // let inter_spacing = (box_size_x * box_size_y / n_particles as f64).sqrt();
+        // let radial_bound = (nn_bound as f64).sqrt() * inter_spacing * 2.0;
+        
+        let radial_bound = if periodic {
+            hypot(box_size_x / 2.0, box_size_y / 2.0)
+        } else {
+            hypot(box_size_x, box_size_y)
+        };
         
         let nbins = (2.0 * radial_bound / binsize).ceil() as usize;
         let box_lengths = vec![box_size_x, box_size_y];
@@ -766,6 +824,74 @@ mod rust_fn {
         return rdf_vector;
     }
 
+    pub fn compute_pnn_vector_rdf_2d(
+        points: &ArrayViewD<'_, f64>,
+        box_size_x: f64,
+        box_size_y: f64,
+        binsize: f64,
+        nn_order: usize,
+        periodic: bool,
+    ) -> Array<f64, Dim<[usize; 2]>> {
+        // Check that the binsize is physical
+        assert!(
+            binsize > 0.0,
+            "Something is wrong with the binsize used for the RDF"
+        );
+
+        let n_particles = points.shape()[0];
+        // let inter_spacing = (box_size_x * box_size_y / n_particles as f64).sqrt();
+        // let radial_bound = (nn_order as f64).sqrt() * inter_spacing * 2.0;
+        
+        let radial_bound = if periodic {
+            hypot(box_size_x / 2.0, box_size_y / 2.0)
+        } else {
+            hypot(box_size_x, box_size_y)
+        };
+        
+        let nbins = (2.0 * radial_bound / binsize).ceil() as usize;
+        let box_lengths = vec![box_size_x, box_size_y];
+
+        let rdf: Vec<Vec<Arc<RwLock<f64>>>> =
+            vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; nbins];
+            
+        // Construct an rtree here
+        let rtree_positions = compute_periodic_rstar_tree(&points, box_lengths[0], box_lengths[1], periodic);
+
+        (0..n_particles).into_par_iter().for_each(|current_index| {
+            
+            let mut neighbor_iter = rtree_positions.nearest_neighbor_iter(&[points[[current_index,0]], points[[current_index,1]]]).skip(nn_order);
+
+            let neighbor = neighbor_iter.next().unwrap();
+            let mut r_ij = vec![neighbor[0] - points[[current_index,0]], neighbor[1] - points[[current_index,1]]];
+            if periodic {
+                ensure_periodicity(&mut r_ij, &box_lengths);
+            }
+            
+            // determine the relevant bin, and update the count at that bin
+            let index_x = ((r_ij[0] + radial_bound) / binsize).floor() as usize;
+            let index_y = ((r_ij[1] + radial_bound) / binsize).floor() as usize;
+            
+            assert!(index_x < nbins);
+            assert!(index_y < nbins);
+            
+            *(rdf[index_x][index_y].write().unwrap()) += 1.0;
+                
+        });
+        
+        let mut rdf_vector = Array::<f64, _>::zeros((nbins, nbins).f());
+        Zip::indexed(&mut rdf_vector).par_for_each(|(i, j), rdf_val| {
+            *rdf_val = *rdf
+            .get(i)
+            .unwrap()
+            .get(j)
+            .unwrap()
+            .read()
+            .unwrap();
+        });
+
+        return rdf_vector;
+    }
+    
     pub fn compute_vector_gyromorphic_corr_2d(
         points: &ArrayViewD<'_, f64>,
         box_size: f64,
@@ -921,8 +1047,6 @@ mod rust_fn {
                 if periodic {
                     ensure_periodicity(&mut r_ij, &box_lengths);
                 }
-
-                // XXX Probably something off for aperiodic in these numbers here? TODO check.
                 
                 // determine the relevant bin, and update the count at that bin
                 let index_x = ((r_ij[0] + bc_shift_factor * 0.5 * box_size_x) / binsize).floor() as usize;
@@ -1038,9 +1162,15 @@ mod rust_fn {
             "Something is wrong with the binsize used for the RDF"
         );
 
-        let n_particles = points.shape()[0];
-        let inter_spacing = (box_size_x * box_size_y * box_size_z / n_particles as f64).cbrt();
-        let radial_bound = (nn_bound as f64).cbrt() * inter_spacing * 2.0;
+        // let n_particles = points.shape()[0];
+        // let inter_spacing = (box_size_x * box_size_y * box_size_z / n_particles as f64).cbrt();
+        // let radial_bound = (nn_bound as f64).cbrt() * inter_spacing * 2.0;
+        
+        let radial_bound = if periodic {
+            hypot(hypot(box_size_x / 2.0, box_size_y / 2.0), box_size_z / 2.0)
+        } else {
+            hypot(hypot(box_size_x, box_size_y),box_size_z)
+        };
         
         let nbins = (2.0 * radial_bound / binsize).ceil() as usize;
         let box_lengths = vec![box_size_x, box_size_y, box_size_z];
@@ -1106,6 +1236,81 @@ mod rust_fn {
         });
     }
 
+    pub fn rdf_normalisation(box_lengths: &Vec<f64>, npoints: usize, bincenter: f64, binsize: f64, periodic: bool) -> f64 {
+        
+        let ndim = box_lengths.len();
+        let volume: f64 = box_lengths.iter().product();
+        let rho = npoints as f64 / volume;
+        
+        assert!(ndim > 1);
+        assert!(ndim < 4);
+        
+        if ndim == 2 {
+            
+            let normalisation = if periodic {
+                if bincenter <= box_lengths[0] / 2.0 {
+                    2.0 * PI * bincenter * binsize * rho
+                // (2 pi r  rho dr)
+                } else {
+                    binsize * rho
+                        * 2.0
+                        * bincenter
+                        * (PI - 4.0 * (0.5 * box_lengths[0] / bincenter).acos())
+                    // rho dr * 2 r *( pi - 4 acos(L/2r))
+                }
+            } else {
+                2.0 * PI * bincenter * binsize * rho
+                // (2 pi r  rho dr)
+            };
+            
+            return normalisation;
+            
+        } else {
+            
+            let normalisation = if periodic {
+                if bincenter <= box_lengths[0] / 2.0 {
+                    4.0 * PI * bincenter * bincenter * binsize * rho
+                    // (4 pi r^2  rho dr)
+                } else if bincenter <= box_lengths[0] / (2.0_f64.sqrt()) {
+                    binsize * rho 
+                        * 2.0
+                        * bincenter
+                        * PI
+                        * (3.0 * box_lengths[0] - 4.0 * bincenter)
+                    // rho dr * 2 r * pi * ( 3 L - 4 r)
+                } else {
+                    binsize * rho
+                        * 2.0
+                        * bincenter
+                        * (3.0 * PI * box_lengths[0] - 4.0 * PI * bincenter
+                            + 12.0
+                                * bincenter
+                                * (1.0
+                                    / (4.0 * bincenter * bincenter
+                                        / (box_lengths[0] * box_lengths[0])
+                                        - 1.0))
+                                    .acos()
+                            - 12.0
+                                * box_lengths[0]
+                                * (1.0
+                                    / (4.0 * bincenter * bincenter
+                                        / (box_lengths[0] * box_lengths[0])
+                                        - 1.0)
+                                        .sqrt())
+                                .acos())
+                    // rho dr * 2 r * ( 3 pi l - 4 pi r + 12 r acos(1/(1-4 r^2 / L^2)) - 12 L acos(1/sqrt(4r^2/L^2 -1)) )
+                }
+            } else {
+                4.0 * PI * bincenter * bincenter * binsize * rho
+                // (4 pi r^2  rho dr)
+            };
+            
+            return normalisation;
+            
+        }
+        
+    }
+    
     pub fn compute_radial_correlations_2d(
         points: &ArrayViewD<'_, f64>,
         fields: &ArrayViewD<'_, f64>,
@@ -1193,22 +1398,7 @@ mod rust_fn {
                 // THEN only, compute the rdf from counts
                 let bincenter = (bin as f64 + 0.5) * binsize;
                 // Use the actual normalization in a square, not the lazy one, if periodic
-                let normalisation = if periodic {
-                    if bincenter <= box_size_x / 2.0 {
-                        2.0 * PI * bincenter * binsize * n_particles as f64
-                            / (box_size_x * box_size_y)
-                    // (2 pi r  rho dr)
-                    } else {
-                        binsize * n_particles as f64 / (box_size_x * box_size_y)
-                            * 2.0
-                            * bincenter
-                            * (PI - 4.0 * (0.5 * box_size_x / bincenter).acos())
-                        // rho dr * 2 r *( pi - 4 acos(L/2r))
-                    }
-                } else {
-                    2.0 * PI * bincenter * binsize * n_particles as f64 / (box_size_x * box_size_y)
-                    // (2 pi r  rho dr)
-                };
+                let normalisation = rdf_normalisation(&box_lengths, n_particles, bincenter, binsize, periodic);
                 *(rdf[bin].write().unwrap()) =
                     current_count / (n_particles as f64 * normalisation / 2.0); // the number of count is 1/ averaged over N 2/ normalised by the uniform case 3/ divided by two because pairs are counted once only
             }
@@ -1239,6 +1429,99 @@ mod rust_fn {
         return (rdf_vector, field_corrs_vector);
     }
 
+    
+    pub fn compute_pnn_rdf(
+        points: &ArrayViewD<'_, f64>,
+        box_lengths: &Vec<f64>,
+        binsize: f64,
+        nn_order: usize,
+        periodic: bool
+    ) -> Vec<f64> {
+        // Check that the binsize is physical
+        assert!(
+            binsize > 0.0,
+            "Something is wrong with the binsize used for the RDF"
+        );
+
+        let npoints = points.shape()[0];
+        let ndim = points.shape()[1];
+        
+        assert!(npoints > 1);
+        assert!(ndim > 1);
+        assert!(ndim < 4);
+        assert!(box_lengths.len() == ndim);
+
+        let max_dist = if periodic {
+            box_lengths.iter().map(|x| (x/2.0).powi(2)).sum::<f64>().sqrt()
+        } else {
+            box_lengths.iter().map(|x| x.powi(2)).sum::<f64>().sqrt()
+        };
+        let nbins = (max_dist / binsize).ceil() as usize;
+        let rdf: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
+        let counts: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
+
+        if ndim == 2 { // 2D case
+
+            // Construct the R*-tree, taking into account periodic boundary conditions
+            // See https://en.wikipedia.org/wiki/R-tree and https://en.wikipedia.org/wiki/R*-tree
+            let rtree_positions = compute_periodic_rstar_tree(&points, box_lengths[0], box_lengths[1], periodic);
+            
+            (0..npoints).into_par_iter().for_each(|i| {
+                let current_point = [points[[i,0]], points[[i,1]]];
+                let mut iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&current_point).skip(nn_order);
+                let (_, dist2) = iter.next().unwrap();
+                
+                // determine the relevant bin, and update the count at that bin for g(r)
+                let index = (dist2.sqrt() / binsize).floor() as usize;
+                assert!(index < nbins);
+                *(counts[index].write().unwrap()) += 1.0;
+            });
+            
+        } else {
+            // Construct the R*-tree, taking into account periodic boundary conditions
+            // See https://en.wikipedia.org/wiki/R-tree and https://en.wikipedia.org/wiki/R*-tree
+            let rtree_positions = compute_periodic_rstar_tree_3d(&points, box_lengths[0], box_lengths[1], box_lengths[2], periodic);
+            
+            (0..npoints).into_par_iter().for_each(|i| {
+                let current_point = [points[[i,0]], points[[i,1]], points[[i,2]]];
+                let mut iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&current_point).skip(nn_order);
+                let (_, dist2) = iter.next().unwrap();
+                
+                // determine the relevant bin, and update the count at that bin for g(r)
+                let index = (dist2.sqrt() / binsize).floor() as usize;
+                assert!(index < nbins);
+                *(counts[index].write().unwrap()) += 1.0;
+            });
+        }
+
+
+        (0..nbins).into_par_iter().for_each(|bin| {
+            // normalise the values of the correlations by counts
+            let current_count = *counts[bin].read().unwrap();
+            if current_count != 0.0 {
+
+                // THEN only, compute the rdf from counts
+                let bincenter = (bin as f64 + 0.5) * binsize;
+                // Use the actual normalization in a square, not the lazy one, if periodic
+                let normalisation = rdf_normalisation(&box_lengths, npoints, bincenter, binsize, periodic);
+                *(rdf[bin].write().unwrap()) =
+                    current_count / (npoints as f64 * normalisation / 2.0); // the number of count is 1/ averaged over N 2/ normalised by the uniform case 3/ divided by two because pairs are counted once only
+            }
+        });
+
+        let mut rdf_vector = vec![0.0; nbins];
+        
+                
+
+        rdf_vector.par_iter_mut()
+        .enumerate()
+        .for_each(|(bin, rdf_vector_bin)| {
+            *rdf_vector_bin = *rdf.get(bin).unwrap().read().unwrap();
+        });
+
+        return rdf_vector;
+    }
+    
     pub fn compute_radial_gyromorphic_corr_2d(
         points: &ArrayViewD<'_, f64>,
         box_size_x: f64,
@@ -1305,22 +1588,7 @@ mod rust_fn {
                 // THEN only, compute the rdf from counts
                 let bincenter = (bin as f64 + 0.5) * binsize;
                 // Use the actual normalization in a square, not the lazy one, if periodic
-                let normalisation = if periodic {
-                    if bincenter <= box_size_x / 2.0 {
-                        2.0 * PI * bincenter * binsize * n_particles as f64
-                            / (box_size_x * box_size_y)
-                    // (2 pi r  rho dr)
-                    } else {
-                        binsize * n_particles as f64 / (box_size_x * box_size_y)
-                            * 2.0
-                            * bincenter
-                            * (PI - 4.0 * (0.5 * box_size_x / bincenter).acos())
-                        // rho dr * 2 r *( pi - 4 acos(L/2r))
-                    }
-                } else {
-                    2.0 * PI * bincenter * binsize * n_particles as f64 / (box_size_x * box_size_y)
-                    // (2 pi r  rho dr)
-                };
+                let normalisation = rdf_normalisation(&box_lengths, n_particles, bincenter, binsize, periodic);
                 *(rdf[bin].write().unwrap()) =
                     current_count / (n_particles as f64 * normalisation / 2.0); // the number of count is 1/ averaged over N 2/ normalised by the uniform case 3/ divided by two because pairs are counted once only
                                                                                 // The orientational order is just a Fourier mode of g, not an actual correlation function of a microscopic observable!
@@ -1444,45 +1712,7 @@ mod rust_fn {
                 // THEN only, compute the rdf from counts
                 let bincenter = (bin as f64 + 0.5) * binsize;
                 // Use the actual normalization in a square, not the lazy one, if periodic
-                let normalisation = if periodic {
-                    if bincenter <= box_size_x / 2.0 {
-                        4.0 * PI * bincenter * bincenter * binsize * n_particles as f64
-                            / (box_size_x * box_size_y * box_size_z)
-                        // (4 pi r^2  rho dr)
-                    } else if bincenter <= box_size_x / (2.0_f64.sqrt()) {
-                        binsize * n_particles as f64 / (box_size_x * box_size_y * box_size_z)
-                            * 2.0
-                            * bincenter
-                            * PI
-                            * (3.0 * box_size_x - 4.0 * bincenter)
-                        // rho dr * 2 r * pi * ( 3 L - 4 r)
-                    } else {
-                        binsize * n_particles as f64 / (box_size_x * box_size_y * box_size_z)
-                            * 2.0
-                            * bincenter
-                            * (3.0 * PI * box_size_x - 4.0 * PI * bincenter
-                                + 12.0
-                                    * bincenter
-                                    * (1.0
-                                        / (4.0 * bincenter * bincenter
-                                            / (box_size_x * box_size_x)
-                                            - 1.0))
-                                        .acos()
-                                - 12.0
-                                    * box_size_x
-                                    * (1.0
-                                        / (4.0 * bincenter * bincenter
-                                            / (box_size_x * box_size_x)
-                                            - 1.0)
-                                            .sqrt())
-                                    .acos())
-                        // rho dr * 2 r * ( 3 pi l - 4 pi r + 12 r acos(1/(1-4 r^2 / L^2)) - 12 L acos(1/sqrt(4r^2/L^2 -1)) )
-                    }
-                } else {
-                    4.0 * PI * bincenter * bincenter * binsize * n_particles as f64
-                        / (box_size_x * box_size_y * box_size_z)
-                    // (4 pi r^2  rho dr)
-                };
+                let normalisation = rdf_normalisation(&box_lengths, n_particles, bincenter, binsize, periodic);
                 *(rdf[bin].write().unwrap()) =
                     current_count / (n_particles as f64 * normalisation / 2.0); // the number of count is 1/ averaged over N 2/ normalised by the uniform case 3/ divided by two because pairs are counted once only
             }

@@ -11,7 +11,7 @@ from scipy.special import gamma
 
 def main(input_file, 
          columns = np.arange(2), fields_columns = None, output_path = "", skip = 1,
-         rdf = False, pcf = False, radial_bound = False, nn_bound = False, voronoi_quantities = False, compute_boops = False, gyromorphic_cf = False, compute_furthest_sites = False,
+         rdf = False, pcf = False, radial_bound = False, nn_bound = False, nn_order = -1, voronoi_quantities = False, compute_boops = False, gyromorphic_cf = False, compute_furthest_sites = False,
          metric_clusters = False,
          bin_width = 1/20, phi = None, starting_box_size = None, boop_orders = np.array([6]), orientation_order = 6, cluster_threshold = 1.0, radial_bound_value = 0.1, nn_bound_value = 6,
          periodic = True, connected = False,
@@ -123,8 +123,11 @@ def main(input_file,
         
         if rdf:
             if fields_columns is None and not compute_boops:
-                dummy = np.ones(points.shape)
-                radial_rdf, _ = rust.compute_radial_correlations_2d(points, dummy, boxsize, binsize, periodic,connected)
+                if nn_order > 0:
+                    radial_rdf = rust.compute_pnn_rdf(points, nn_order, boxsize, binsize, periodic)
+                else:
+                    dummy = np.ones(points.shape)
+                    radial_rdf, _ = rust.compute_radial_correlations_2d(points, dummy, boxsize, binsize, periodic,connected)
                 
                 
                 nbins = radial_rdf.shape[0]
@@ -197,7 +200,9 @@ def main(input_file,
                 vector_rdf, vector_orientation = rust.compute_vector_gyromorphic_corr_2d(points, boxsize, binsize, periodic, orientation_order)
                 vector_orientation = np.sum(vector_orientation**2,axis=-1)
             else:
-                if radial_bound:
+                if nn_order > 0: 
+                    vector_rdf = rust.compute_pnn_vector_rdf2d(points, nn_order, boxsize, binsize, periodic)
+                elif radial_bound:
                     vector_rdf = rust.compute_bounded_vector_rdf2d(points, boxsize, binsize, radial_bound_value, periodic)
                 elif nn_bound:
                     vector_rdf = rust.compute_nnbounded_vector_rdf2d(points, boxsize, binsize, nn_bound_value, periodic)
@@ -315,6 +320,8 @@ if __name__ == '__main__':
         default = 0.1", default = 0.1)
     parser.add_argument("-nnbv", "--nn_bound_value", type = int, help = "Value of finite neighbor index bound\
         default = 6", default = 6)
+    parser.add_argument("-nno", "--nn_order", type = int, help = "Value of nn order to compute rdf at\
+        default = inf", default = -1)
     parser.add_argument("-L", "--box_size", type=float, help = "Box size, if exact value known\
         default = None", default = None)
     parser.add_argument("-bw", "--bin_width", type=float, help = "Width of the bins, in units of radii OR typical distances\
@@ -337,6 +344,7 @@ if __name__ == '__main__':
     pcf = args.pair_correlation_function
     radial_bound = args.radial_bound
     nn_bound = args.nn_bound
+    nn_order = args.nn_order
     voronoi_quantities = args.voronoi_quantities
     compute_boops = args.compute_boops
     boop_orders_args = args.boop_orders
@@ -380,7 +388,7 @@ if __name__ == '__main__':
     main(input_file,
          columns = columns, fields_columns = fields_columns, skip = skip, phi = phi, starting_box_size=box_size,
          bin_width=bin_width, periodic = periodic, connected=connected,
-         rdf = rdf, pcf = pcf, radial_bound=radial_bound, nn_bound=nn_bound, voronoi_quantities = voronoi_quantities, compute_boops=compute_boops, gyromorphic_cf = gyromorphic_cf, compute_furthest_sites = compute_furthest_sites,
+         rdf = rdf, pcf = pcf, radial_bound=radial_bound, nn_bound=nn_bound, nn_order = nn_order, voronoi_quantities = voronoi_quantities, compute_boops=compute_boops, gyromorphic_cf = gyromorphic_cf, compute_furthest_sites = compute_furthest_sites,
          metric_clusters= metric_clusters,
          orientation_order = orientation_order, boop_orders= boop_orders, cluster_threshold = cluster_threshold, radial_bound_value=radial_bound_value, nn_bound_value=nn_bound_value,
          logscaleplot = logscaleplot, vmaxmax = vmaxmax, output_path = output_path)
