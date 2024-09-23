@@ -18,13 +18,16 @@
 ### Current functionalities
 This is very much a WIP but the code already supports
 - Radial g(r) and radial field correlations (for arbitrary scalar or vector fields) in 2d and 3d, either connected or non-connected, for either square periodic or free boundary conditions.
-- Vector g(r) in 2d and 3d
+- Vector g(r) in 2d and 3d, with options to compute only up to a radial bound or to the p-th nearest metric neighbor
+- Radial or vector statistics of the p-th nearest metric neighbor distances, relying on R-Trees for speed
 - Steinhardt's BOOPs in 2d
-- Our long-range orientational correlation in 2d
+- Gyromorphic correlation in 2d
+- Voronoi quantities (nearest neighbor distance, Voronoi cell area, Voronoi number of neighbors) and option to compute quantities averaged over Voronoi neighbors in 2d
+- Cluster tagging according to metric distance between particles
+- Neighbor counts using metric cut-off, including for polydisperse systems
 
 ### TODO
 - Carry over Steinhardt's 3d BOOPs from hyperalg
-- Add simple functions for k-nearest-neighbor statistics like in my wls files
 - Compute a few quantities from R-Tree
 - Add simple K-function and/or Fry plots functions?
 - Add an option to normalize g via the summands, g(r) = sum (bin / norm(bin)) instead of g(r) = sum(bin) / norm(r).
