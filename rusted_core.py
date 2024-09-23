@@ -277,6 +277,116 @@ def main(input_file,
             print(furthest_sites)
             
     elif ndim == 3:
+        
+        
+        if metric_clusters:
+            raise NotImplementedError
+        
+        if voronoi_quantities:
+        
+            raise NotImplementedError
+        
+        if compute_boops:
+            
+           raise NotImplementedError
+        
+        if rdf:
+            if fields_columns is None and not compute_boops:
+                if nn_order > 0:
+                    rdf_suffix = '_nno'+str(nn_order)
+                    radial_rdf = rust.compute_pnn_rdf(points, nn_order, boxsize, binsize, periodic)
+                else:
+                    rdf_suffix = ''
+                    dummy = np.ones(points.shape)
+                    radial_rdf, _ = rust.compute_radial_correlations_3d(points, dummy, boxsize, binsize, periodic,connected)
+                
+                
+                nbins = radial_rdf.shape[0]
+                bins = (np.arange(0, nbins) + 0.5)*binsize
+                fig = plt.figure()#figsize=(10,10))
+                ax = fig.gca()
+                pc = ax.plot(bins, radial_rdf,c=cmr.ember(0.5), linewidth=0.75)
+                ax.set_xlim(0,0.5*pcf_width)
+                ax.tick_params(labelsize=18)
+                ax.set_xlabel(r"$r$",fontsize=18)
+                ax.set_ylabel(r"$g(r)$",fontsize=18)
+                plt.savefig(file_name+"_rdf"+rdf_suffix+".png", bbox_inches = 'tight',pad_inches = 0, dpi = 300)
+                plt.close()
+                
+                np.savetxt(os.path.join(output_path,file_name+'_rdf'+rdf_suffix+'.csv'), np.vstack([bins, radial_rdf]).T )
+                
+            elif compute_boops:
+                
+                raise NotImplementedError
+            
+            else: 
+                radial_rdf, fields_corr = rust.compute_radial_correlations_3d(points, fields, boxsize, binsize, periodic,connected)
+            
+                nbins = radial_rdf.shape[0]
+                bins = (np.arange(0, nbins) + 0.5)*binsize
+                fig = plt.figure()#figsize=(10,10))
+                ax = fig.gca()
+                for k in range(fields_corr.shape[-1]):
+                    pc = ax.plot(bins, fields_corr[:,k],c=cmr.ember(0.5), linewidth=0.75)
+                ax.set_xlim(0,0.5)
+                ax.tick_params(labelsize=18)
+                ax.set_xlabel(r"$r$",fontsize=18)
+                ax.set_ylabel(r"$C(r)$",fontsize=18)
+                plt.savefig(file_name+"_radial_corr.png", bbox_inches = 'tight',pad_inches = 0, dpi = 300)
+                plt.close()
+                
+                
+                np.savetxt(os.path.join(output_path,file_name+'_rdf.csv'), np.vstack([bins, radial_rdf]).T )
+                np.savetxt(os.path.join(output_path,file_name+'_radia_corr.csv'), np.vstack([bins, fields_corr]).T )
+                
+        if pcf:
+            if gyromorphic_cf:
+                raise NotImplementedError
+            else:
+                if nn_order > 0:
+                    pcf_suffix = '_nno'+str(nn_order)
+                    vector_rdf = rust.compute_pnn_vector_rdf3d(points, nn_order, boxsize, binsize, periodic)
+                elif radial_bound:
+                    pcf_suffix = '_rb'+str(radial_bound_value)
+                    vector_rdf = rust.compute_bounded_vector_rdf3d(points, boxsize, binsize, radial_bound_value, periodic)
+                elif nn_bound:
+                    pcf_suffix = '_nnb'+str(nn_bound_value)
+                    vector_rdf = rust.compute_nnbounded_vector_rdf3d(points, boxsize, binsize, nn_bound_value, periodic)
+                else:
+                    pcf_suffix = ''
+                    vector_rdf = rust.compute_vector_rdf3d(points, boxsize, binsize, periodic)
+                
+            nbins = np.ceil(boxsize/binsize)
+            rho_n = npoints * npoints / ( boxsize * boxsize * boxsize)
+            vector_rdf /= rho_n * binsize * binsize * binsize
+            np.savetxt(output_path+file_name+"vector_rdf"+pcf_suffix+".csv", vector_rdf)
+            
+            if periodic:
+                center = int(vector_rdf.shape[0]/2)
+                width = int(pcf_width * vector_rdf.shape[1]/2)
+            else:
+                center = int(vector_rdf.shape[0]/2)
+                width = int(pcf_width * vector_rdf.shape[1]/2)
+                
+            fig = plt.figure(figsize=(10,10))
+            ax = fig.gca()
+            if logscaleplot:
+                pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1,center],norm=clr.LogNorm(vmin=1e-3,vmax=1e1), cmap=cmr.ember, extent=[-0.5,0.5,0.5,-0.5])
+            else:
+                vmax = np.min([vector_rdf.max(), vmaxmax])
+                pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1,center], vmin = 0, vmax = vmax, cmap=cmr.ember, extent=[-0.5,0.5,0.5,-0.5])
+            fig.colorbar(pc)
+            plt.savefig(output_path+file_name+"_vector_rdf"+pcf_suffix+"_xy.png", dpi = 300)
+            plt.close()
+            
+            if gyromorphic_cf:
+                raise NotImplementedError
+                
+        if compute_furthest_sites:
+            raise NotImplementedError
+        
+    
+    else:
         raise NotImplementedError
     
 
