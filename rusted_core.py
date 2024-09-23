@@ -227,13 +227,15 @@ def main(input_file,
                 center = int(vector_rdf.shape[0]/2)
                 width = int(pcf_width * vector_rdf.shape[1]/2)
                 
+            extent_value = 0.5 * pcf_width
+                
             fig = plt.figure(figsize=(10,10))
             ax = fig.gca()
             if logscaleplot:
-                pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1],norm=clr.LogNorm(vmin=1e-3,vmax=1e1), cmap=cmr.ember, extent=[-0.5,0.5,0.5,-0.5])
+                pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1],norm=clr.LogNorm(vmin=1e-3,vmax=1e1), cmap=cmr.ember, extent=[-extent_value,extent_value,extent_value,-extent_value])
             else:
                 vmax = np.min([vector_rdf.max(), vmaxmax])
-                pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1], vmin = 0, vmax = vmax, cmap=cmr.ember, extent=[-0.5,0.5,0.5,-0.5])
+                pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1], vmin = 0, vmax = vmax, cmap=cmr.ember, extent=[-extent_value,extent_value,extent_value,-extent_value])
             fig.colorbar(pc)
             plt.savefig(output_path+file_name+"_vector_rdf"+pcf_suffix+".png", dpi = 300)
             plt.close()
@@ -368,13 +370,15 @@ def main(input_file,
                 center = int(vector_rdf.shape[0]/2)
                 width = int(pcf_width * vector_rdf.shape[1]/2)
                 
+            extent_value = 0.5 * pcf_width
+                
             fig = plt.figure(figsize=(10,10))
             ax = fig.gca()
             if logscaleplot:
-                pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1,center],norm=clr.LogNorm(vmin=1e-3,vmax=1e1), cmap=cmr.ember, extent=[-0.5,0.5,0.5,-0.5])
+                pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1,center],norm=clr.LogNorm(vmin=1e-3,vmax=1e1), cmap=cmr.ember, extent=[-extent_value,extent_value,extent_value,-extent_value])
             else:
                 vmax = np.min([vector_rdf.max(), vmaxmax])
-                pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1,center], vmin = 0, vmax = vmax, cmap=cmr.ember, extent=[-0.5,0.5,0.5,-0.5])
+                pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1,center], vmin = 0, vmax = vmax, cmap=cmr.ember, extent=[-extent_value,extent_value,extent_value,-extent_value])
             fig.colorbar(pc)
             plt.savefig(output_path+file_name+"_vector_rdf"+pcf_suffix+"_xy.png", dpi = 300)
             plt.close()
