@@ -26,6 +26,21 @@ elif '.txt' in file_path:
     if ',' in first_line:
         delimiter = ','
     elif ' ' in first_line:
+        delimiter = None
+    elif "\t" in first_line:
+        delimiter = None
+    else:
+        raise NotImplementedError("Delimiter not identified")
+    
+    points = np.loadtxt(file_path, delimiter=delimiter)[:,0:2]
+elif '.csv' in file_path:
+    
+    with open(file_path, 'r') as file:
+        first_line = file.readline()
+    # Determine the delimiter based on the first line
+    if ',' in first_line:
+        delimiter = ','
+    elif ' ' in first_line:
         delimiter = ' '
     else:
         raise NotImplementedError("Delimiter not identified")
@@ -51,13 +66,13 @@ order = 100
 boxsize = 1.0
 radius = boxsize / (npoints)**(1.0/ndim)
 binsize = radius / 20.0
-periodic = False
+periodic = True
 logscaleplot = False
 vmaxmax = 2
 
 if ndim == 2:
     # vector_rdf = rust.compute_vector_rdf2d(points, boxsize, binsize, periodic)
-    vector_rdf, vector_orientation = rust.compute_vector_orientation_corr_2d(points, boxsize, binsize, periodic, order)
+    vector_rdf, vector_orientation = rust.compute_vector_gyromorphic_corr_2d(points, boxsize, binsize, periodic, order)
 elif ndim == 3:
     vector_rdf = rust.compute_vector_rdf3d(points, boxsize, binsize, periodic)
     nbins = np.ceil(boxsize/binsize)
@@ -100,10 +115,10 @@ np.savetxt(file_name+"vector_orientation_test.csv", vector_orientation)
 
 if periodic:
     center = int(vector_rdf.shape[0]/2)
-    width = int(vector_rdf.shape[1]/2)
+    width = int(vector_rdf.shape[1]/8)
 else:
-    center = int(vector_rdf.shape[0]/4)
-    width = int(vector_rdf.shape[1]/4)
+    center = int(vector_rdf.shape[0]/2)
+    width = int(vector_rdf.shape[1]/16)
 
 fig = plt.figure(figsize=(10,10))
 ax = fig.gca()
