@@ -15,7 +15,7 @@ def main(input_file,
          metric_clusters = False,
          bin_width = 1/20, phi = None, starting_box_size = None, boop_orders = np.array([6]), orientation_order = 6, cluster_threshold = 1.0, radial_bound_value = 0.1, nn_bound_value = 6,
          periodic = True, connected = False,
-         logscaleplot = False, vmaxmax = 1e1):
+         logscaleplot = False, vmaxmax = 1e1, pcf_width = 1.0):
     '''
     Simple front-end for Rusted Core
     '''
@@ -124,8 +124,10 @@ def main(input_file,
         if rdf:
             if fields_columns is None and not compute_boops:
                 if nn_order > 0:
+                    rdf_suffix = '_nno'+str(nn_order)
                     radial_rdf = rust.compute_pnn_rdf(points, nn_order, boxsize, binsize, periodic)
                 else:
+                    rdf_suffix = ''
                     dummy = np.ones(points.shape)
                     radial_rdf, _ = rust.compute_radial_correlations_2d(points, dummy, boxsize, binsize, periodic,connected)
                 
@@ -135,14 +137,14 @@ def main(input_file,
                 fig = plt.figure()#figsize=(10,10))
                 ax = fig.gca()
                 pc = ax.plot(bins, radial_rdf,c=cmr.ember(0.5), linewidth=0.75)
-                ax.set_xlim(0,0.5)
+                ax.set_xlim(0,0.5*pcf_width)
                 ax.tick_params(labelsize=18)
                 ax.set_xlabel(r"$r$",fontsize=18)
                 ax.set_ylabel(r"$g(r)$",fontsize=18)
-                plt.savefig(file_name+"_rdf.png", bbox_inches = 'tight',pad_inches = 0, dpi = 300)
+                plt.savefig(file_name+"_rdf"+rdf_suffix+".png", bbox_inches = 'tight',pad_inches = 0, dpi = 300)
                 plt.close()
                 
-                np.savetxt(os.path.join(output_path,file_name+'_rdf.csv'), np.vstack([bins, radial_rdf]).T )
+                np.savetxt(os.path.join(output_path,file_name+'_rdf'+rdf_suffix+'.csv'), np.vstack([bins, radial_rdf]).T )
                 
             elif compute_boops:
             
@@ -200,26 +202,30 @@ def main(input_file,
                 vector_rdf, vector_orientation = rust.compute_vector_gyromorphic_corr_2d(points, boxsize, binsize, periodic, orientation_order)
                 vector_orientation = np.sum(vector_orientation**2,axis=-1)
             else:
-                if nn_order > 0: 
+                if nn_order > 0:
+                    pcf_suffix = '_nno'+str(nn_order)
                     vector_rdf = rust.compute_pnn_vector_rdf2d(points, nn_order, boxsize, binsize, periodic)
                 elif radial_bound:
+                    pcf_suffix = '_rb'+str(radial_bound_value)
                     vector_rdf = rust.compute_bounded_vector_rdf2d(points, boxsize, binsize, radial_bound_value, periodic)
                 elif nn_bound:
+                    pcf_suffix = '_nnb'+str(nn_bound_value)
                     vector_rdf = rust.compute_nnbounded_vector_rdf2d(points, boxsize, binsize, nn_bound_value, periodic)
                 else:
+                    pcf_suffix = ''
                     vector_rdf = rust.compute_vector_rdf2d(points, boxsize, binsize, periodic)
                 
             nbins = np.ceil(boxsize/binsize)
             rho_n = npoints * npoints / ( boxsize * boxsize)
             vector_rdf /= rho_n * binsize * binsize
-            np.savetxt(output_path+file_name+"vector_rdf.csv", vector_rdf)
+            np.savetxt(output_path+file_name+"vector_rdf"+pcf_suffix+".csv", vector_rdf)
             
             if periodic:
                 center = int(vector_rdf.shape[0]/2)
-                width = int(vector_rdf.shape[1]/2)
+                width = int(pcf_width * vector_rdf.shape[1]/2)
             else:
                 center = int(vector_rdf.shape[0]/2)
-                width = int(vector_rdf.shape[1]/2)
+                width = int(pcf_width * vector_rdf.shape[1]/2)
                 
             fig = plt.figure(figsize=(10,10))
             ax = fig.gca()
@@ -229,7 +235,7 @@ def main(input_file,
                 vmax = np.min([vector_rdf.max(), vmaxmax])
                 pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1], vmin = 0, vmax = vmax, cmap=cmr.ember, extent=[-0.5,0.5,0.5,-0.5])
             fig.colorbar(pc)
-            plt.savefig(output_path+file_name+"_vector_rdf.png", dpi = 300)
+            plt.savefig(output_path+file_name+"_vector_rdf"+pcf_suffix+".png", dpi = 300)
             plt.close()
             
             if gyromorphic_cf:
@@ -269,6 +275,9 @@ def main(input_file,
             
             print(furthest_sites.shape)
             print(furthest_sites)
+            
+    elif ndim == 3:
+        raise NotImplementedError
     
 
 def unitball_volume(ndim):
@@ -333,6 +342,8 @@ if __name__ == '__main__':
     ## Plotting options
     parser.add_argument("--logscaleplot", action='store_true', help = "Use log scales on plots where it's an option\
         default = False", default = False)
+    parser.add_argument("--pcf_width", type = float, help = "Extent of plot range for pcf plots, in units of max full range\
+        default = 1.0", default = 1.0)
     parser.add_argument("--vmaxmax", type=float, help = "Vmax at which maps are cropped\
         default = 1e9", default = 1e9)
     parser.add_argument("-o", "--output_path", type=str, help="Path to output directory\
@@ -383,6 +394,7 @@ if __name__ == '__main__':
     
     logscaleplot = args.logscaleplot
     vmaxmax = args.vmaxmax
+    pcf_width = args.pcf_width
     output_path = args.output_path
     
     main(input_file,
@@ -391,4 +403,4 @@ if __name__ == '__main__':
          rdf = rdf, pcf = pcf, radial_bound=radial_bound, nn_bound=nn_bound, nn_order = nn_order, voronoi_quantities = voronoi_quantities, compute_boops=compute_boops, gyromorphic_cf = gyromorphic_cf, compute_furthest_sites = compute_furthest_sites,
          metric_clusters= metric_clusters,
          orientation_order = orientation_order, boop_orders= boop_orders, cluster_threshold = cluster_threshold, radial_bound_value=radial_bound_value, nn_bound_value=nn_bound_value,
-         logscaleplot = logscaleplot, vmaxmax = vmaxmax, output_path = output_path)
+         logscaleplot = logscaleplot, vmaxmax = vmaxmax, pcf_width=pcf_width, output_path = output_path)
