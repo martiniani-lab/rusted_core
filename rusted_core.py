@@ -11,9 +11,9 @@ from scipy.special import gamma
 
 def main(input_file, 
          columns = np.arange(2), fields_columns = None, output_path = "", skip = 1,
-         rdf = False, pcf = False, radial_bound = False, nn_bound = False, nn_order = -1, voronoi_quantities = False, compute_boops = False, gyromorphic_cf = False, compute_furthest_sites = False,
+         rdf = False, pcf = False, nn_order = -1, mean_nn_bound = -1, voronoi_quantities = False, compute_boops = False, gyromorphic_cf = False, compute_furthest_sites = False,
          metric_clusters = False,
-         bin_width = 1/20, phi = None, starting_box_size = None, boop_orders = np.array([6]), orientation_order = 6, cluster_threshold = 1.0, radial_bound_value = 0.1, nn_bound_value = 6,
+         bin_width = 1/20, phi = None, starting_box_size = None, boop_orders = np.array([6]), orientation_order = 6, cluster_threshold = 1.0, radial_bound = 0.1, nn_bound = 6,
          periodic = True, connected = False,
          logscaleplot = False, vmaxmax = 1e1, pcf_width = 1.0):
     '''
@@ -121,6 +121,20 @@ def main(input_file,
             boops = rust.compute_2d_boops(points, boop_orders, boxsize, periodic)
             np.savetxt(os.path.join(output_path,file_name+'_boops.csv'), boops.reshape(npoints, 2*boop_orders.shape[0]) )
         
+        if mean_nn_bound > 0:
+            mean_nn_distance = rust.compute_pnn_mean_nnbound_distances(points, mean_nn_bound, boxsize, periodic)
+            
+            fig = plt.figure()#figsize=(10,10))
+            ax = fig.gca()
+            pc = ax.scatter(np.arange(mean_nn_bound)+1,mean_nn_distance)
+            ax.tick_params(labelsize=18)
+            ax.set_xlabel(r"$n$",fontsize=18)
+            ax.set_ylabel(r"$d_n$",fontsize=18)
+            plt.savefig(file_name+"_mean_nnd_"+str(mean_nn_bound)+".png", bbox_inches = 'tight',pad_inches = 0, dpi = 300)
+            plt.close()
+            
+            np.savetxt(os.path.join(output_path,file_name+'_mean_nnd_'+str(mean_nn_bound)+'.csv'), mean_nn_distance )
+        
         if rdf:
             if fields_columns is None and not compute_boops:
                 if nn_order > 0:
@@ -205,12 +219,12 @@ def main(input_file,
                 if nn_order > 0:
                     pcf_suffix = '_nno'+str(nn_order)
                     vector_rdf = rust.compute_pnn_vector_rdf2d(points, nn_order, boxsize, binsize, periodic)
-                elif radial_bound:
-                    pcf_suffix = '_rb'+str(radial_bound_value)
-                    vector_rdf = rust.compute_bounded_vector_rdf2d(points, boxsize, binsize, radial_bound_value, periodic)
-                elif nn_bound:
-                    pcf_suffix = '_nnb'+str(nn_bound_value)
-                    vector_rdf = rust.compute_nnbounded_vector_rdf2d(points, boxsize, binsize, nn_bound_value, periodic)
+                elif radial_bound > 0.0:
+                    pcf_suffix = '_rb'+str(radial_bound)
+                    vector_rdf = rust.compute_bounded_vector_rdf2d(points, boxsize, binsize, radial_bound, periodic)
+                elif nn_bound > 0:
+                    pcf_suffix = '_nnb'+str(nn_bound)
+                    vector_rdf = rust.compute_nnbounded_vector_rdf2d(points, boxsize, binsize, nn_bound, periodic)
                 else:
                     pcf_suffix = ''
                     vector_rdf = rust.compute_vector_rdf2d(points, boxsize, binsize, periodic)
@@ -292,6 +306,20 @@ def main(input_file,
             
            raise NotImplementedError
         
+        if mean_nn_bound > 0:
+            mean_nn_distance = rust.compute_pnn_mean_nnbound_distances(points, mean_nn_bound, boxsize, periodic)
+            
+            fig = plt.figure()#figsize=(10,10))
+            ax = fig.gca()
+            pc = ax.scatter(np.arange(mean_nn_bound)+1,mean_nn_distance)
+            ax.tick_params(labelsize=18)
+            ax.set_xlabel(r"$n$",fontsize=18)
+            ax.set_ylabel(r"$d_n$",fontsize=18)
+            plt.savefig(file_name+"_mean_nnd_"+str(mean_nn_bound)+".png", bbox_inches = 'tight',pad_inches = 0, dpi = 300)
+            plt.close()
+            
+            np.savetxt(os.path.join(output_path,file_name+'_mean_nnd_'+str(mean_nn_bound)+'.csv'), mean_nn_distance )
+        
         if rdf:
             if fields_columns is None and not compute_boops:
                 if nn_order > 0:
@@ -348,12 +376,12 @@ def main(input_file,
                 if nn_order > 0:
                     pcf_suffix = '_nno'+str(nn_order)
                     vector_rdf = rust.compute_pnn_vector_rdf3d(points, nn_order, boxsize, binsize, periodic)
-                elif radial_bound:
-                    pcf_suffix = '_rb'+str(radial_bound_value)
-                    vector_rdf = rust.compute_bounded_vector_rdf3d(points, boxsize, binsize, radial_bound_value, periodic)
-                elif nn_bound:
-                    pcf_suffix = '_nnb'+str(nn_bound_value)
-                    vector_rdf = rust.compute_nnbounded_vector_rdf3d(points, boxsize, binsize, nn_bound_value, periodic)
+                elif radial_bound > 0.0:
+                    pcf_suffix = '_rb'+str(radial_bound)
+                    vector_rdf = rust.compute_bounded_vector_rdf3d(points, boxsize, binsize, radial_bound, periodic)
+                elif nn_bound > 0:
+                    pcf_suffix = '_nnb'+str(nn_bound)
+                    vector_rdf = rust.compute_nnbounded_vector_rdf3d(points, boxsize, binsize, nn_bound, periodic)
                 else:
                     pcf_suffix = ''
                     vector_rdf = rust.compute_vector_rdf3d(points, boxsize, binsize, periodic)
@@ -408,10 +436,6 @@ if __name__ == '__main__':
         default = false", default = False)
     parser.add_argument("-pcf", "--pair_correlation_function", action = 'store_true', help = "Compute the pcf\
         default = false", default = False)
-    parser.add_argument("-rb", "--radial_bound", action = 'store_true', help = "Compute pcf up to a finite metric bound\
-        default = false", default = False)
-    parser.add_argument("-nnb", "--nn_bound", action = 'store_true', help = "Compute pcf up to a finite neighbor index bound\
-        default = false", default = False)
     parser.add_argument("-voro", "--voronoi_quantities", action="store_true", help = "Compute Voronoi cell areas, number of neighbours, and nn distances\
         default = False", default = False)
     parser.add_argument("-boops", "--compute_boops", action="store_true", help = "Compute Steinhardt's Bond-Orientational Order Parameters\
@@ -439,12 +463,14 @@ if __name__ == '__main__':
         default = os.cpu_count", default=os.cpu_count())
     parser.add_argument("--phi", type=float, help = "Packing fraction, used to determine radius\
         default = None", default = None)
-    parser.add_argument("-rbv", "--radial_bound_value", type = float, help = "Value of finite metric bound, in units of L\
-        default = 0.1", default = 0.1)
-    parser.add_argument("-nnbv", "--nn_bound_value", type = int, help = "Value of finite neighbor index bound\
-        default = 6", default = 6)
+    parser.add_argument("-rbv", "--radial_bound", type = float, help = "Value of finite metric bound, in units of L\
+        default = inf", default = -1.0)
+    parser.add_argument("-nnbv", "--nn_bound", type = int, help = "Value of finite neighbor index bound\
+        default = inf", default = -1)
     parser.add_argument("-nno", "--nn_order", type = int, help = "Value of nn order to compute rdf at\
         default = inf", default = -1)
+    parser.add_argument("-mnnb", "--mean_nn_bound", type = int, help = "Order p up to which mean p-th metric distance is computed\
+        default = None", default = -1)
     parser.add_argument("-L", "--box_size", type=float, help = "Box size, if exact value known\
         default = None", default = None)
     parser.add_argument("-bw", "--bin_width", type=float, help = "Width of the bins, in units of radii OR typical distances\
@@ -467,8 +493,6 @@ if __name__ == '__main__':
     
     rdf = args.radial_distribution_function
     pcf = args.pair_correlation_function
-    radial_bound = args.radial_bound
-    nn_bound = args.nn_bound
     nn_order = args.nn_order
     voronoi_quantities = args.voronoi_quantities
     compute_boops = args.compute_boops
@@ -499,8 +523,9 @@ if __name__ == '__main__':
         fields_columns = None
     skip = args.skip
     phi = args.phi
-    radial_bound_value = args.radial_bound_value
-    nn_bound_value = args.nn_bound_value
+    radial_bound = args.radial_bound
+    nn_bound = args.nn_bound
+    mean_nn_bound = args.mean_nn_bound
     box_size = args.box_size
     bin_width = args.bin_width
     periodic = not args.free_boundary_condition
@@ -514,7 +539,7 @@ if __name__ == '__main__':
     main(input_file,
          columns = columns, fields_columns = fields_columns, skip = skip, phi = phi, starting_box_size=box_size,
          bin_width=bin_width, periodic = periodic, connected=connected,
-         rdf = rdf, pcf = pcf, radial_bound=radial_bound, nn_bound=nn_bound, nn_order = nn_order, voronoi_quantities = voronoi_quantities, compute_boops=compute_boops, gyromorphic_cf = gyromorphic_cf, compute_furthest_sites = compute_furthest_sites,
+         rdf = rdf, pcf = pcf, nn_order = nn_order, mean_nn_bound=mean_nn_bound, voronoi_quantities = voronoi_quantities, compute_boops=compute_boops, gyromorphic_cf = gyromorphic_cf, compute_furthest_sites = compute_furthest_sites,
          metric_clusters= metric_clusters,
-         orientation_order = orientation_order, boop_orders= boop_orders, cluster_threshold = cluster_threshold, radial_bound_value=radial_bound_value, nn_bound_value=nn_bound_value,
+         orientation_order = orientation_order, boop_orders= boop_orders, cluster_threshold = cluster_threshold, radial_bound=radial_bound, nn_bound=nn_bound,
          logscaleplot = logscaleplot, vmaxmax = vmaxmax, pcf_width=pcf_width, output_path = output_path)

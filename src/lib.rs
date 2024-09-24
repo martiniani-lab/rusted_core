@@ -495,6 +495,33 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         
         return array_pnn_distances;
     }
+    
+    #[pyfn(m)]
+    fn compute_pnn_mean_nnbound_distances<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        nn_bound: usize,
+        box_size: f64,
+        periodic: bool
+    ) -> Bound<'py, PyArray1<f64>> {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+        
+        assert!(nn_bound>0, "Order for pth-nn distribution needs to be natural integer");
+        let ndim = array.shape()[1];
+        let box_lengths = vec!(box_size; ndim);
+
+        let pnn_distances = rust_fn::compute_pnn_mean_nnbound_distances(
+            &array,
+            &box_lengths,
+            nn_bound,
+            periodic
+        );
+        let array_pnn_distances = PyArray1::from_vec_bound(py, pnn_distances);
+        
+        return array_pnn_distances;
+    }
         
     #[pyfn(m)]
     fn cluster_by_distance<'py>(
@@ -1520,6 +1547,70 @@ mod rust_fn {
         });
 
         return rdf_vector;
+    }
+    
+    
+    pub fn compute_pnn_mean_nnbound_distances(
+        points: &ArrayViewD<'_, f64>,
+        box_lengths: &Vec<f64>,
+        nn_bound: usize,
+        periodic: bool
+    ) -> Vec<f64> {
+
+        let npoints = points.shape()[0];
+        let ndim = points.shape()[1];
+        
+        assert!(npoints > 1);
+        assert!(ndim > 1);
+        assert!(ndim < 4);
+        assert!(box_lengths.len() == ndim);
+
+        // Store this in a vector that is addressable in a naïvely parallel loop, at the cost of memory
+        let mut all_dists: Vec<Vec<f64>> = vec![vec![0.0; nn_bound]; npoints];
+
+        if ndim == 2 { // 2D case
+
+            // Construct the R*-tree, taking into account periodic boundary conditions
+            // See https://en.wikipedia.org/wiki/R-tree and https://en.wikipedia.org/wiki/R*-tree
+            let rtree_positions = compute_periodic_rstar_tree(&points, box_lengths[0], box_lengths[1], periodic);
+            
+            all_dists.par_iter_mut().enumerate().for_each(|(i, all_dists_i)| {
+                let current_point = [points[[i,0]], points[[i,1]]];
+                let mut iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&current_point).skip(1);
+                
+                for nn_order in 0..nn_bound {
+                    let (_, dist2) = iter.next().unwrap();
+                    all_dists_i[nn_order] = dist2.sqrt();
+                }
+                
+            });
+            
+        } else {
+            // Construct the R*-tree, taking into account periodic boundary conditions
+            // See https://en.wikipedia.org/wiki/R-tree and https://en.wikipedia.org/wiki/R*-tree
+            let rtree_positions = compute_periodic_rstar_tree_3d(&points, box_lengths[0], box_lengths[1], box_lengths[2], periodic);
+            
+            all_dists.par_iter_mut().enumerate().for_each(|(i, all_dists_i)| {
+                let current_point = [points[[i,0]], points[[i,1]], points[[i,2]]];
+                let mut iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&current_point).skip(1);
+                
+                for nn_order in 0..nn_bound {
+                    let (_, dist2) = iter.next().unwrap();
+                    all_dists_i[nn_order] += dist2.sqrt();
+                }
+            });
+        }
+
+        let mut mean_dists = vec![0.0; nn_bound];
+
+        mean_dists.par_iter_mut().enumerate().for_each(|(nn_order, mean_dist_order)| {
+            (0..npoints).into_iter().for_each(|i|{
+                *mean_dist_order += all_dists[i][nn_order];
+            });
+            *mean_dist_order /= npoints as f64;
+        });
+
+        return mean_dists;
     }
     
     pub fn compute_radial_gyromorphic_corr_2d(
