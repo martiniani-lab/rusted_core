@@ -123,20 +123,23 @@ def main(input_file,
         
         if mean_nn_bound > 0:
             mean_nn_distance = rust.compute_pnn_mean_nnbound_distances(points, mean_nn_bound, boxsize, periodic)
+            rho = npoints / boxsize**2
+            normalization = np.sqrt((np.arange(mean_nn_bound)+1) / (rho * np.pi))/2
+            print(mean_nn_distance/normalization)
             
             fig = plt.figure()#figsize=(10,10))
             ax = fig.gca()
-            pc = ax.scatter(np.arange(mean_nn_bound)+1,mean_nn_distance)
+            pc = ax.scatter(np.arange(mean_nn_bound)+1,mean_nn_distance/normalization)
             ax.tick_params(labelsize=18)
             ax.set_xlabel(r"$n$",fontsize=18)
-            ax.set_ylabel(r"$d_n$",fontsize=18)
+            ax.set_ylabel(r"$d_n/\sqrt{n/\rho\pi}$",fontsize=18)
             plt.savefig(file_name+"_mean_nnd_"+str(mean_nn_bound)+".png", bbox_inches = 'tight',pad_inches = 0, dpi = 300)
             plt.close()
             
             np.savetxt(os.path.join(output_path,file_name+'_mean_nnd_'+str(mean_nn_bound)+'.csv'), mean_nn_distance )
         
         if rdf:
-            if fields_columns is None and not compute_boops:
+            if fields_columns is None and not compute_boops and not gyromorphic_cf:
                 if nn_order > 0:
                     rdf_suffix = '_nno'+str(nn_order)
                     radial_rdf = rust.compute_pnn_rdf(points, nn_order, boxsize, binsize, periodic)
@@ -159,6 +162,40 @@ def main(input_file,
                 plt.close()
                 
                 np.savetxt(os.path.join(output_path,file_name+'_rdf'+rdf_suffix+'.csv'), np.vstack([bins, radial_rdf]).T )
+                
+            elif gyromorphic_cf:
+                rdf_suffix = ''
+                radial_rdf , or_corr = rust.compute_radial_gyromorphic_corr_2d(points, boxsize, binsize, periodic, orientation_order)
+                
+                nbins = radial_rdf.shape[0]
+                bins = (np.arange(0, nbins) + 0.5)*binsize
+                fig = plt.figure()#figsize=(10,10))
+                ax = fig.gca()
+                pc = ax.plot(bins, radial_rdf,c=cmr.ember(0.5), linewidth=0.75)
+                ax.set_xlim(0,0.5*pcf_width)
+                ax.tick_params(labelsize=18)
+                ax.set_xlabel(r"$r$",fontsize=18)
+                ax.set_ylabel(r"$g(r)$",fontsize=18)
+                plt.savefig(file_name+"_rdf"+rdf_suffix+".png", bbox_inches = 'tight',pad_inches = 0, dpi = 300)
+                plt.close()
+                
+                np.savetxt(os.path.join(output_path,file_name+'_rdf'+rdf_suffix+'.csv'), np.vstack([bins, radial_rdf]).T )
+                
+                or_corr_mod = np.sqrt(or_corr[:,0]**2+or_corr[:,1]**2)
+                
+                nbins = radial_rdf.shape[0]
+                bins = (np.arange(0, nbins) + 0.5)*binsize
+                fig = plt.figure()#figsize=(10,10))
+                ax = fig.gca()
+                pc = ax.plot(bins,or_corr_mod,c=cmr.ember(0.5), linewidth=0.75)
+                ax.set_xlim(0,0.5*pcf_width)
+                ax.tick_params(labelsize=18)
+                ax.set_xlabel(r"$r$",fontsize=18)
+                ax.set_ylabel(r"$g_{G}(r)$",fontsize=18)
+                plt.savefig(file_name+"_gyro"+str(orientation_order)+"_"+rdf_suffix+".png", bbox_inches = 'tight',pad_inches = 0, dpi = 300)
+                plt.close()
+                
+                np.savetxt(os.path.join(output_path,file_name+'_gyro'+str(orientation_order)+"_"+rdf_suffix+'.csv'), np.vstack([bins, or_corr_mod]).T )
                 
             elif compute_boops:
             
@@ -389,7 +426,8 @@ def main(input_file,
             nbins = np.ceil(boxsize/binsize)
             rho_n = npoints * npoints / ( boxsize * boxsize * boxsize)
             vector_rdf /= rho_n * binsize * binsize * binsize
-            np.savetxt(output_path+file_name+"vector_rdf"+pcf_suffix+".csv", vector_rdf)
+            hkl.dump(vector_rdf, file_name+"vector_rdf"+pcf_suffix+".hkl")
+            # np.savetxt(output_path+file_name+"vector_rdf"+pcf_suffix+".csv", vector_rdf)
             
             if periodic:
                 center = int(vector_rdf.shape[0]/2)

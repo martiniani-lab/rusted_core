@@ -53,8 +53,8 @@ if ndim == 2:
     
     _, gboop = rust.compute_radial_correlations_2d(points, boops[:,-1,:], boxsize, binsize, periodic,connected)
     
-    order = 200
-    nK =100
+    order = 60
+    nK =300
     peak_angle = 0
     # nK = 82.3286
     # peak_angle = 2*np.pi/6.0 *  (2.27)/(2.0*np.pi)
