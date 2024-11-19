@@ -36,7 +36,7 @@ def main(input_file,
         if fields_columns is not None:
             fields =  hkl.load(input_file)[:,fields_columns]
     elif '.csv' in file_name:
-        points = np.loadtxt(input_file, delimiter=',')
+        points = np.loadtxt(input_file, delimiter=',', skiprows=skip)[:,columns]
     elif '.txt' in file_name:
         
         with open(input_file, 'r') as file:
