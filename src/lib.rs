@@ -534,11 +534,14 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         // First we convert the Python numpy array into Rust ndarray
         // Here, you can specify different array sizes and types.
         let array = unsafe { points.as_array() }; // Convert to ndarray type
+        
+        let ndim = array.shape()[1];
+        let box_lengths = vec![box_size; ndim];
 
         let cluster_id = rust_fn::cluster_by_distance(
             &array,
             threshold,
-            &vec![box_size; 2],
+            &box_lengths,
             periodic
         );
         let cluster_id = PyArray1::from_vec_bound(py, cluster_id);
@@ -635,7 +638,7 @@ mod rust_fn {
     use rayon::iter::ParallelBridge;
     use std::f64::consts::PI;
     use std::f64::INFINITY;
-    use std::fmt::Display;
+    use std::fmt::{Display, Formatter, Result};
     use std::sync::{Arc, RwLock};
     extern crate spade;
     use spade::internals::FixedHandleImpl;
@@ -2127,7 +2130,7 @@ mod rust_fn {
         let ndim = points_array.shape()[1];
 
         assert!(npoints > 1);
-        assert!(ndim == 2); // Need to implement/find delaunay in 3d
+        assert!(ndim == 2 || ndim == 3); // Need to implement/find delaunay in 3d
         
         let mut cluster_id: Vec<usize> = (0..npoints).collect();
         let mut done = false;
@@ -2187,6 +2190,54 @@ mod rust_fn {
                 done = change_list.read().unwrap().len() == 0;
             }
             
+        } else if ndim == 3 {
+            
+            // In that case, use an rtree.
+            // It's a bit more annoying to navigate than a delaunay for propagation because order is not trivially preserved
+            // Easy strategy is to have a vec<usize> with 2 elements as a tag, particle_id and cluster_id
+            let id_pair_vec: Vec<ParticleClusterTags> = (0..npoints).zip(0..npoints).map(|(i,j)| { ParticleClusterTags{id:i, cluster_id:j} } ).collect();
+            let id_pair_array = Array::from_vec(id_pair_vec);
+            
+            let mut rtree = compute_decorated_rstar_tree_3d(points_array, &id_pair_array.view(), box_lengths[0], box_lengths[1], box_lengths[2], periodic);
+            while !done {
+                // let change_list = Arc::new(RwLock::new(Vec::new()));
+                let has_not_changed = Arc::new(RwLock::new(true));
+
+                cluster_id.par_iter_mut().enumerate().for_each( | (i, id)  |  {
+                    // Here the fast option is to go through nearest neighbors and update based on that
+                    // XXX
+                    
+                    let mut neighbor_with_distance_2_iter = rtree.nearest_neighbor_iter_with_distance_2(&[points_array[[i,0]], points_array[[i,1]], points_array[[i,2]]]).skip(1);
+                    let mut still_neighbors = true;
+                    while still_neighbors {
+                        let (neighbor, dist2) = neighbor_with_distance_2_iter.next().unwrap();
+                        // let neigh_id = neighbor.data.id;
+                        let neigh_cluster_id = neighbor.data.cluster_id;
+                        if dist2 <= threshold.powi(2) && *id > neigh_cluster_id {
+                            *id = neigh_cluster_id;
+                            // change_list.write().unwrap().push(i); // Replaced by brute-force parallel loop for now since rtree is not ordered
+                            if *has_not_changed.read().unwrap() {
+                                *has_not_changed.write().unwrap() = false;
+                            }
+                        } else if dist2 >= threshold.powi(2) {
+                            still_neighbors = false;
+                        }
+                    }
+                } );
+                
+                // Update tags in rtree
+                // TODO make this part better // Right now: brute-forcing update
+                done = *has_not_changed.read().unwrap();
+                if !done {
+                    rtree.iter_mut().par_bridge().into_par_iter().for_each(|point_with_data| {
+                        let particle_id = point_with_data.data.id;
+                        point_with_data.data.cluster_id = cluster_id[particle_id];
+                    });
+                }
+
+            }
+            
+            
         } else {
             panic!("Not implemented yet!");
         }
@@ -2212,6 +2263,21 @@ mod rust_fn {
     
         fn position(&self) -> Point2<f64> {
             self.position
+        }
+    }
+    
+    // Needed for rtree tags for cluster
+    #[derive(Clone)]
+    #[derive(Copy)]
+    #[derive(Debug)]
+    struct ParticleClusterTags {
+        id: usize,
+        cluster_id: usize
+    }
+    impl Display for ParticleClusterTags {
+        fn fmt(&self, f: &mut Formatter) -> Result {
+            write!(f, "id: {:?}, cluster_id: {:?}\n", self.id, self.cluster_id)?;
+            Ok(())
         }
     }
     
@@ -2609,19 +2675,19 @@ mod rust_fn {
     // https://docs.rs/rstar/latest/rstar/primitives/struct.GeomWithData.html
     type ListPointWithTag<T, const N:usize> = GeomWithData<[f64; N], T>;
 
-    pub fn compute_decorated_rstar_tree(
+    pub fn compute_decorated_rstar_tree<T: Display + Send + Sync + Copy>(
         positions: &ArrayViewD<'_, f64>,
-        field: &ArrayView1<'_, f64>, // Assumed scalar for now
+        field: &ArrayView1<'_, T>, // Assumed scalar for now
         box_size_x: f64,
         box_size_y: f64,
         periodic: bool
-    ) -> RTree<ListPointWithTag<f64, 2>> {
+    ) -> RTree<ListPointWithTag<T, 2>> {
 
 
         // Create an empty for the vector of points to load into the tree
         // let mut points_vector: Vec<Point2<f64>> = Vec::new();
         // let mut points_vector: Arc<RwLock<Vec<Point2<f64>>>> = Arc::new(RwLock::new(Vec::new()));
-        let tagged_points_vector: Arc<RwLock<Vec<ListPointWithTag<f64, 2>>>> = Arc::new(RwLock::new(Vec::new()));
+        let tagged_points_vector: Arc<RwLock<Vec<ListPointWithTag<T, 2>>>> = Arc::new(RwLock::new(Vec::new()));
 
         let n_copies: usize = if periodic { 9 } else { 1 };
         // Get the number of particles from positions, and consider 9 copies of the system to take into account the PBCs
@@ -2671,20 +2737,20 @@ mod rust_fn {
     }
     
     
-    pub fn compute_decorated_rstar_tree_3d(
+    pub fn compute_decorated_rstar_tree_3d<T: Display + Send + Sync + Copy>(
         positions: &ArrayViewD<'_, f64>,
-        field: &ArrayView1<'_, f64>, // Assumed scalar for now
+        field: &ArrayView1<'_, T>, // Assumed scalar for now
         box_size_x: f64,
         box_size_y: f64,
         box_size_z: f64,
         periodic: bool
-    ) -> RTree<ListPointWithTag<f64, 3>> {
+    ) -> RTree<ListPointWithTag<T, 3>> {
 
 
         // Create an empty for the vector of points to load into the tree
         // let mut points_vector: Vec<Point2<f64>> = Vec::new();
         // let mut points_vector: Arc<RwLock<Vec<Point3<f64>>>> = Arc::new(RwLock::new(Vec::new()));
-        let tagged_points_vector: Arc<RwLock<Vec<ListPointWithTag<f64,3>>>> = Arc::new(RwLock::new(Vec::new()));
+        let tagged_points_vector: Arc<RwLock<Vec<ListPointWithTag<T,3>>>> = Arc::new(RwLock::new(Vec::new()));
 
         // Get the number of particles from positions, and consider 27 copies of the system to take into account the PBCs
         let n_copies: usize = if periodic { 27 } else { 1 };
