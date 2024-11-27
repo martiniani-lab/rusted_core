@@ -15,7 +15,7 @@ def main(input_file,
          metric_clusters = False,
          bin_width = 1/20, phi = None, starting_box_size = None, boop_orders = np.array([6]), orientation_order = 6, cluster_threshold = 1.0, radial_bound = 0.1, nn_bound = 6,
          periodic = True, connected = False,
-         logscaleplot = False, vmaxmax = 1e1, pcf_width = 1.0):
+         logscaleplot = False, vmaxmax = 1e1, pcf_width = 1.0, bareplot = False, save_pcf = False):
     '''
     Simple front-end for Rusted Core
     '''
@@ -246,7 +246,7 @@ def main(input_file,
                 
                 
                 np.savetxt(os.path.join(output_path,file_name+'_rdf.csv'), np.vstack([bins, radial_rdf]).T )
-                np.savetxt(os.path.join(output_path,file_name+'_radia_corr.csv'), np.vstack([bins, fields_corr]).T )
+                np.savetxt(os.path.join(output_path,file_name+'_radial_corr.csv'), np.vstack([bins, fields_corr]).T )
                 
         if pcf:
             if gyromorphic_cf:
@@ -269,7 +269,8 @@ def main(input_file,
             nbins = np.ceil(boxsize/binsize)
             rho_n = npoints * npoints / ( boxsize * boxsize)
             vector_rdf /= rho_n * binsize * binsize
-            np.savetxt(output_path+file_name+"vector_rdf"+pcf_suffix+".csv", vector_rdf)
+            if save_pcf:
+                np.savetxt(output_path+file_name+"vector_rdf"+pcf_suffix+".csv", vector_rdf)
             
             if periodic:
                 center = int(vector_rdf.shape[0]/2)
@@ -287,7 +288,10 @@ def main(input_file,
             else:
                 vmax = np.min([vector_rdf.max(), vmaxmax])
                 pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1], vmin = 0, vmax = vmax, cmap=cmr.ember, extent=[-extent_value,extent_value,extent_value,-extent_value])
-            fig.colorbar(pc)
+            if not bareplot:
+                fig.colorbar(pc)
+            else:
+                ax.set_axis_off()
             plt.savefig(output_path+file_name+"_vector_rdf"+pcf_suffix+".png", dpi = 300)
             plt.close()
             
@@ -303,7 +307,10 @@ def main(input_file,
                 else:
                     vmax = np.min([vector_orientation.max(), vmaxmax])
                     pc = ax.imshow(vector_orientation[center-width:center+width+1, center-width:center+width+1], vmin = 0, vmax = None, cmap=cmr.ember)
-                fig.colorbar(pc)
+                if not bareplot:
+                    fig.colorbar(pc)
+                else:
+                    ax.set_axis_off()
                 plt.savefig(output_path+file_name+"_vector_orientation.png", dpi = 300)
                 plt.close()
                 
@@ -440,8 +447,9 @@ def main(input_file,
             nbins = np.ceil(boxsize/binsize)
             rho_n = npoints * npoints / ( boxsize * boxsize * boxsize)
             vector_rdf /= rho_n * binsize * binsize * binsize
-            hkl.dump(vector_rdf, file_name+"vector_rdf"+pcf_suffix+".hkl")
-            # np.savetxt(output_path+file_name+"vector_rdf"+pcf_suffix+".csv", vector_rdf)
+            if save_pcf:
+                hkl.dump(vector_rdf, file_name+"vector_rdf"+pcf_suffix+".hkl")
+                # np.savetxt(output_path+file_name+"vector_rdf"+pcf_suffix+".csv", vector_rdf)
             
             if periodic:
                 center = int(vector_rdf.shape[0]/2)
@@ -459,7 +467,10 @@ def main(input_file,
             else:
                 vmax = np.min([vector_rdf.max(), vmaxmax])
                 pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1,center], vmin = 0, vmax = vmax, cmap=cmr.ember, extent=[-extent_value,extent_value,extent_value,-extent_value])
-            fig.colorbar(pc)
+            if not bareplot:
+                fig.colorbar(pc)
+            else:
+                ax.set_axis_off()
             plt.savefig(output_path+file_name+"_vector_rdf"+pcf_suffix+"_xy.png", dpi = 300)
             plt.close()
             
@@ -536,6 +547,10 @@ if __name__ == '__main__':
         default = False", default = False)
     parser.add_argument("--pcf_width", type = float, help = "Extent of plot range for pcf plots, in units of max full range\
         default = 1.0", default = 1.0)
+    parser.add_argument("--bareplot", action='store_true', help = "Remove color bars and ticks from intensity maps\
+        default = False", default=False)
+    parser.add_argument("--save_pcf", action='store_true', help = "Save a csv of the full pcf (storage heavy!)\
+        default = False", default=False)
     parser.add_argument("--vmaxmax", type=float, help = "Vmax at which maps are cropped\
         default = 1e9", default = 1e9)
     parser.add_argument("-o", "--output_path", type=str, help="Path to output directory\
@@ -586,6 +601,8 @@ if __name__ == '__main__':
     logscaleplot = args.logscaleplot
     vmaxmax = args.vmaxmax
     pcf_width = args.pcf_width
+    bareplot = args.bareplot
+    save_pcf = args.save_pcf
     output_path = args.output_path
     
     main(input_file,
@@ -594,4 +611,4 @@ if __name__ == '__main__':
          rdf = rdf, pcf = pcf, nn_order = nn_order, mean_nn_bound=mean_nn_bound, voronoi_quantities = voronoi_quantities, compute_boops=compute_boops, gyromorphic_cf = gyromorphic_cf, compute_furthest_sites = compute_furthest_sites,
          metric_clusters= metric_clusters,
          orientation_order = orientation_order, boop_orders= boop_orders, cluster_threshold = cluster_threshold, radial_bound=radial_bound, nn_bound=nn_bound,
-         logscaleplot = logscaleplot, vmaxmax = vmaxmax, pcf_width=pcf_width, output_path = output_path)
+         logscaleplot = logscaleplot, vmaxmax = vmaxmax, pcf_width=pcf_width, bareplot = bareplot, save_pcf = save_pcf, output_path = output_path)
