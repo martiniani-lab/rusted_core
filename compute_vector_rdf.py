@@ -26,11 +26,26 @@ elif '.txt' in file_path:
     if ',' in first_line:
         delimiter = ','
     elif ' ' in first_line:
-        delimiter = ' '
+        delimiter = None
+    elif "\t" in first_line:
+        delimiter = None
     else:
         raise NotImplementedError("Delimiter not identified")
     
     points = np.loadtxt(file_path, delimiter=delimiter)[:,0:2]
+elif '.csv' in file_path:
+    
+    with open(file_path, 'r') as file:
+        first_line = file.readline()
+    # Determine the delimiter based on the first line
+    if ',' in first_line:
+        delimiter = ','
+    elif ' ' in first_line:
+        delimiter = ' '
+    else:
+        raise NotImplementedError("Delimiter not identified")
+    
+    points = np.loadtxt(file_path, delimiter=delimiter)[:,0:3]
 else:
     print("Wrong file format")
     sys.exit()
@@ -46,18 +61,20 @@ points *= 0.5
 ndim = points.shape[1]
 npoints = points.shape[0]
 
+print(ndim)
+
 order = 100
 
 boxsize = 1.0
 radius = boxsize / (npoints)**(1.0/ndim)
-binsize = radius / 20.0
+binsize = radius / 5.0
 periodic = False
 logscaleplot = False
 vmaxmax = 2
 
 if ndim == 2:
     # vector_rdf = rust.compute_vector_rdf2d(points, boxsize, binsize, periodic)
-    vector_rdf, vector_orientation = rust.compute_vector_orientation_corr_2d(points, boxsize, binsize, periodic, order)
+    vector_rdf, vector_orientation = rust.compute_vector_gyromorphic_corr_2d(points, boxsize, binsize, periodic, order)
 elif ndim == 3:
     vector_rdf = rust.compute_vector_rdf3d(points, boxsize, binsize, periodic)
     nbins = np.ceil(boxsize/binsize)
@@ -70,8 +87,8 @@ elif ndim == 3:
         center = int(vector_rdf.shape[0]/2)
         width = int(vector_rdf.shape[1]/2)
     else:
-        center = int(vector_rdf.shape[0]/4)
-        width = int(vector_rdf.shape[1]/4)
+        center = int(vector_rdf.shape[0]/2)
+        width = int(vector_rdf.shape[1]/2)
 
     fig = plt.figure(figsize=(10,10))
     ax = fig.gca()
@@ -82,6 +99,17 @@ elif ndim == 3:
         pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1, center], vmin = 0, vmax = vmax, cmap=cmr.ember)
     fig.colorbar(pc)
     plt.savefig(file_name+"_vector_rdf_test.png", dpi = 300)
+    plt.close()
+    
+    fig = plt.figure(figsize=(10,10))
+    ax = fig.gca()
+    if logscaleplot:
+        pc = ax.imshow(vector_rdf[center, center-width:center+width+1, center-width:center+width+1],norm=clr.LogNorm(vmin=1e-3,vmax=1e1), cmap=cmr.ember)
+    else:
+        vmax = np.min([vector_rdf.max(), vmaxmax])
+        pc = ax.imshow(vector_rdf[center, center-width:center+width+1, center-width:center+width+1], vmin = 0, vmax = vmax, cmap=cmr.ember)
+    fig.colorbar(pc)
+    plt.savefig(file_name+"_vector_rdf_test_bis.png", dpi = 300)
     plt.close()
     
     sys.exit()
@@ -100,10 +128,10 @@ np.savetxt(file_name+"vector_orientation_test.csv", vector_orientation)
 
 if periodic:
     center = int(vector_rdf.shape[0]/2)
-    width = int(vector_rdf.shape[1]/2)
+    width = int(vector_rdf.shape[1]/8)
 else:
-    center = int(vector_rdf.shape[0]/4)
-    width = int(vector_rdf.shape[1]/4)
+    center = int(vector_rdf.shape[0]/2)
+    width = int(vector_rdf.shape[1]/16)
 
 fig = plt.figure(figsize=(10,10))
 ax = fig.gca()

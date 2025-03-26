@@ -53,8 +53,8 @@ if ndim == 2:
     
     _, gboop = rust.compute_radial_correlations_2d(points, boops[:,-1,:], boxsize, binsize, periodic,connected)
     
-    order = 200
-    nK =100
+    order = 60
+    nK =300
     peak_angle = 0
     # nK = 82.3286
     # peak_angle = 2*np.pi/6.0 *  (2.27)/(2.0*np.pi)
@@ -68,7 +68,7 @@ if ndim == 2:
     np.savetxt(file_name+"_translational_"+str(nK)+".csv", translational)
     
     radial_rdf, corr = rust.compute_radial_correlations_2d(points, translational, boxsize, binsize, periodic, connected)
-    _, or_corr = rust.compute_radial_orientation_corr_2d(points, boxsize, binsize, periodic, order)
+    _, or_corr = rust.compute_radial_gyromorphic_corr_2d(points, boxsize, binsize, periodic, order)
 
 elif ndim == 3:
     
