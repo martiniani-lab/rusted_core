@@ -32,7 +32,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         // Mutate the data
         // No need to return any value as the input data is mutated
         let vector_rdf = rust_fn::compute_vector_rdf_2d(&array, box_size, box_size, binsize, periodic);
-        let array_rdf = PyArray2::from_array_bound(py, &vector_rdf);
+        let array_rdf = PyArray2::from_array(py, &vector_rdf);
 
         return array_rdf;
     }
@@ -52,7 +52,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         // Mutate the data
         // No need to return any value as the input data is mutated
         let vector_rdf = rust_fn::compute_vector_rdf_3d(&array, box_size, box_size, box_size, binsize, periodic);
-        let array_rdf = PyArray3::from_array_bound(py, &vector_rdf);
+        let array_rdf = PyArray3::from_array(py, &vector_rdf);
 
         return array_rdf;
     }
@@ -74,7 +74,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         // Mutate the data
         // No need to return any value as the input data is mutated
         let vector_rdf = rust_fn::compute_bounded_vector_rdf_2d(&array, box_size, box_size, binsize, radial_bound, periodic);
-        let array_rdf = PyArray2::from_array_bound(py, &vector_rdf);
+        let array_rdf = PyArray2::from_array(py, &vector_rdf);
 
         return array_rdf;
     }
@@ -96,7 +96,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         // Mutate the data
         // No need to return any value as the input data is mutated
         let vector_rdf = rust_fn::compute_nnbounded_vector_rdf_2d(&array, box_size, box_size, binsize, nn_bound, periodic);
-        let array_rdf = PyArray2::from_array_bound(py, &vector_rdf);
+        let array_rdf = PyArray2::from_array(py, &vector_rdf);
 
         return array_rdf;
     }
@@ -124,7 +124,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
             p,
             periodic
         );
-        let array_pnn_rdf = PyArray2::from_array_bound(py, &pnn_vector_rdf);
+        let array_pnn_rdf = PyArray2::from_array(py, &pnn_vector_rdf);
         
         return array_pnn_rdf;
     }
@@ -148,7 +148,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         
 
         let pnn_rdf = rust_fn::compute_pnn_rdf(&array, &box_lengths, binsize, nn_order, periodic);
-        let array_pnn_rdf = PyArray1::from_vec_bound(py, pnn_rdf);
+        let array_pnn_rdf = PyArray1::from_vec(py, pnn_rdf);
         
         return array_pnn_rdf;
     }
@@ -169,7 +169,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         // Mutate the data
         // No need to return any value as the input data is mutated
         let vector_rdf = rust_fn::compute_bounded_vector_rdf_3d(&array, box_size, box_size, box_size, binsize, radial_bound, periodic);
-        let array_rdf = PyArray3::from_array_bound(py, &vector_rdf);
+        let array_rdf = PyArray3::from_array(py, &vector_rdf);
 
         return array_rdf;
     }
@@ -190,7 +190,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         // Mutate the data
         // No need to return any value as the input data is mutated
         let vector_rdf = rust_fn::compute_nnbounded_vector_rdf_3d(&array, box_size, box_size, box_size, binsize, nn_bound, periodic);
-        let array_rdf = PyArray3::from_array_bound(py, &vector_rdf);
+        let array_rdf = PyArray3::from_array(py, &vector_rdf);
 
         return array_rdf;
     }
@@ -212,8 +212,8 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         // No need to return any value as the input data is mutated
         let (vector_rdf, vector_corr) =
             rust_fn::compute_vector_gyromorphic_corr_2d(&array, box_size, binsize, periodic, order);
-        let array_rdf = PyArray2::from_array_bound(py, &vector_rdf);
-        let array_corr = PyArray::from_array_bound(py, &vector_corr);
+        let array_rdf = PyArray2::from_array(py, &vector_rdf);
+        let array_corr = PyArray::from_array(py, &vector_corr);
 
         return (array_rdf, array_corr);
     }
@@ -250,8 +250,8 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
             periodic,
             connected,
         );
-        let array_rdf = PyArray::from_vec_bound(py, rdf);
-        let pyarray_field_corrs = PyArray::from_array_bound(py, &field_corrs);
+        let array_rdf = PyArray::from_vec(py, rdf);
+        let pyarray_field_corrs = PyArray::from_array(py, &field_corrs);
 
         return (array_rdf, pyarray_field_corrs);
     }
@@ -274,8 +274,8 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         let (rdf, radial_corr) = rust_fn::compute_radial_gyromorphic_corr_2d(
             &array, box_size, box_size, binsize, periodic, order,
         );
-        let array_rdf = PyArray::from_vec_bound(py, rdf);
-        let array_corr = PyArray::from_array_bound(py, &radial_corr);
+        let array_rdf = PyArray::from_vec(py, rdf);
+        let array_corr = PyArray::from_array(py, &radial_corr);
 
         return (array_rdf, array_corr);
     }
@@ -313,8 +313,8 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
             periodic,
             connected,
         );
-        let array_rdf = PyArray::from_vec_bound(py, rdf);
-        let pyarray_field_corrs = PyArray::from_owned_array_bound(py, field_corrs);
+        let array_rdf = PyArray::from_vec(py, rdf);
+        let pyarray_field_corrs = PyArray::from_owned_array(py, field_corrs);
 
         return (array_rdf, pyarray_field_corrs);
     }
@@ -339,7 +339,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
             box_size,
             periodic
         );
-        let array_boops = PyArray::from_array_bound(py, &boops);
+        let array_boops = PyArray::from_array(py, &boops);
 
         return array_boops;
     }
@@ -364,9 +364,9 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
             true,
             true
         );
-        let array_areas = PyArray1::from_vec_bound(py, areas.unwrap());
-        let array_neighbour_counts = PyArray1::from_vec_bound(py, neighbour_counts.unwrap());
-        let array_nn_distances = PyArray1::from_vec_bound(py, nn_distances.unwrap());
+        let array_areas = PyArray1::from_vec(py, areas.unwrap());
+        let array_neighbour_counts = PyArray1::from_vec(py, neighbour_counts.unwrap());
+        let array_nn_distances = PyArray1::from_vec(py, nn_distances.unwrap());
         
         return (array_areas, array_neighbour_counts, array_nn_distances);
     }
@@ -392,7 +392,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
             false,
             false
         );
-        let array_areas = PyArray1::from_vec_bound(py, areas.unwrap());
+        let array_areas = PyArray1::from_vec(py, areas.unwrap());
         
         return array_areas;
     }
@@ -417,7 +417,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
             true,
             false
         );
-        let array_neighbour_counts = PyArray1::from_vec_bound(py, neighbour_counts.unwrap());
+        let array_neighbour_counts = PyArray1::from_vec(py, neighbour_counts.unwrap());
         
         return array_neighbour_counts;
     }
@@ -442,7 +442,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
             false,
             true
         );
-        let array_nn_distances = PyArray1::from_vec_bound(py, nn_distances.unwrap());
+        let array_nn_distances = PyArray1::from_vec(py, nn_distances.unwrap());
         
         return array_nn_distances;
     }
@@ -464,7 +464,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
             box_size,
             periodic
         );
-        let array_furthest_sites = PyArray::from_array_bound(py, &furthest_sites);
+        let array_furthest_sites = PyArray::from_array(py, &furthest_sites);
         
         return array_furthest_sites;
     }
@@ -491,7 +491,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
             &box_lengths,
             periodic
         );
-        let array_pnn_distances = PyArray1::from_vec_bound(py, pnn_distances);
+        let array_pnn_distances = PyArray1::from_vec(py, pnn_distances);
         
         return array_pnn_distances;
     }
@@ -518,7 +518,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
             nn_bound,
             periodic
         );
-        let array_pnn_distances = PyArray1::from_vec_bound(py, pnn_distances);
+        let array_pnn_distances = PyArray1::from_vec(py, pnn_distances);
         
         return array_pnn_distances;
     }
@@ -544,7 +544,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
             &box_lengths,
             periodic
         );
-        let cluster_id = PyArray1::from_vec_bound(py, cluster_id);
+        let cluster_id = PyArray1::from_vec(py, cluster_id);
         
         return cluster_id;
     }
@@ -568,7 +568,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         // Mutate the data
         // No need to return any value as the input data is mutated
         let reduced_variances = rust_fn::point_variances(&array, &radii, &vec![box_size; ndim], n_samples, periodic);
-        reduced_variances.into_pyarray_bound(py)
+        reduced_variances.into_pyarray(py)
     }
 
     #[pyfn(m)]
@@ -591,7 +591,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
             &vec![box_size; 2],
             periodic
         );
-        let neighbor_counts = PyArray1::from_vec_bound(py, neighbor_counts);
+        let neighbor_counts = PyArray1::from_vec(py, neighbor_counts);
         
         return neighbor_counts;
     }
@@ -618,7 +618,7 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
             &vec![box_size; 2],
             periodic
         );
-        let neighbor_counts = PyArray1::from_vec_bound(py, neighbor_counts);
+        let neighbor_counts = PyArray1::from_vec(py, neighbor_counts);
         
         return neighbor_counts;
     }
@@ -2401,11 +2401,11 @@ mod rust_fn {
 
                 (0..n_samples).into_par_iter().for_each( |_sample| {
 
-                    let mut rng = rand::thread_rng();
+                    let mut rng = rand::rng();
 
-                    let mut random: f64 = rng.gen();
+                    let mut random: f64 = rng.random();
                     let x_center = random; 
-                    random = rng.gen();
+                    random = rng.random();
                     let y_center = random;
 
                     let r_center = vec![x_center, y_center];
@@ -2425,13 +2425,13 @@ mod rust_fn {
             radii.to_vec().into_iter().enumerate().for_each(|(current_index,radius)| {
                 (0..n_samples).into_par_iter().for_each( |_sample| {
 
-                    let mut rng = rand::thread_rng();
+                    let mut rng = rand::rng();
 
-                    let mut random: f64 = rng.gen();
+                    let mut random: f64 = rng.random();
                     let x_center = random; 
-                    random = rng.gen();
+                    random = rng.random();
                     let y_center = random;
-                    random = rng.gen();
+                    random = rng.random();
                     let z_center = random;
 
                     let r_center = vec![x_center, y_center, z_center];
