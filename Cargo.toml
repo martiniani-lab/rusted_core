@@ -9,7 +9,7 @@ name = "rust"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "*" #{ version = "0.24.0", features = ["abi3-py39"] }
+pyo3 = { version = "0.24.0", features = ["abi3-py39"] } # Later gives warnings and soon deprecations
 rand ="*"
 numpy = "*"
 ndarray = {version = "0.16.1", features = ["rayon"]} # Breaking version change for types beyond that
