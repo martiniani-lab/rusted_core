@@ -14,7 +14,7 @@ def main(input_file,
          rdf = False, pcf = False, nn_order = -1, mean_nn_bound = -1, voronoi_quantities = False, compute_boops = False, gyromorphic_cf = False, compute_furthest_sites = False,
          metric_clusters = False,
          bin_width = 1/20, phi = None, starting_box_size = None, boop_orders = np.array([6]), orientation_order = 6, cluster_threshold = 1.0, radial_bound = 0.1, nn_bound = 6,
-         periodic = True, connected = False,
+         periodic = True, connected = False, cut_circle = None,
          logscaleplot = False, vmaxmax = 1e1, pcf_width = 1.0, bareplot = False, save_pcf = False):
     '''
     Simple front-end for Rusted Core
@@ -80,6 +80,21 @@ def main(input_file,
     binsize = bin_width * radius
     
     print(f"Found {npoints} points in {ndim}d\n")
+    
+    if cut_circle is not None:
+        points -= np.mean(points, axis=0)
+        idx = np.nonzero(np.linalg.norm(points,axis=-1)<=cut_circle*0.5)
+        points = np.squeeze(points[idx])
+        npoints = points.shape[0]
+        print(f"Cut to {npoints} points in {ndim}d\n")
+        points -= points.min()
+        points /= points.max()
+        if phi is None:
+            radius = 0.5 * boxsize / (npoints)**(1.0/ndim)
+            binsize = bin_width * radius
+        print(points.shape)
+            
+        file_name += f"_cutcircle_{cut_circle}"
     
     if ndim == 2:
         fig = plt.figure(figsize=[10,10])
@@ -290,9 +305,10 @@ def main(input_file,
                 pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1], vmin = 0, vmax = vmax, cmap=cmr.ember, extent=[-extent_value,extent_value,extent_value,-extent_value])
             if not bareplot:
                 fig.colorbar(pc)
+                plt.savefig(output_path+file_name+"_vector_rdf"+pcf_suffix+".png", bbox_inches = 'tight', pad_inches = 0,  dpi = 300)
             else:
                 ax.set_axis_off()
-            plt.savefig(output_path+file_name+"_vector_rdf"+pcf_suffix+".png", dpi = 300)
+                plt.savefig(output_path+file_name+"_vector_rdf"+pcf_suffix+".png", bbox_inches = 'tight', pad_inches = 0,  dpi = 300)
             plt.close()
             
             if gyromorphic_cf:
@@ -309,9 +325,10 @@ def main(input_file,
                     pc = ax.imshow(vector_orientation[center-width:center+width+1, center-width:center+width+1], vmin = 0, vmax = None, cmap=cmr.ember)
                 if not bareplot:
                     fig.colorbar(pc)
+                    plt.savefig(output_path+file_name+"_vector_orientation.png", dpi = 300)
                 else:
                     ax.set_axis_off()
-                plt.savefig(output_path+file_name+"_vector_orientation.png", dpi = 300)
+                    plt.savefig(output_path+file_name+"_vector_orientation.png", bbox_inches = 'tight', pad_inches = 0, dpi = 300)
                 plt.close()
                 
         if compute_furthest_sites:
@@ -469,9 +486,10 @@ def main(input_file,
                 pc = ax.imshow(vector_rdf[center-width:center+width+1, center-width:center+width+1,center], vmin = 0, vmax = vmax, cmap=cmr.ember, extent=[-extent_value,extent_value,extent_value,-extent_value])
             if not bareplot:
                 fig.colorbar(pc)
+                plt.savefig(output_path+file_name+"_vector_rdf"+pcf_suffix+"_xy.png", dpi = 300)
             else:
                 ax.set_axis_off()
-            plt.savefig(output_path+file_name+"_vector_rdf"+pcf_suffix+"_xy.png", dpi = 300)
+                plt.savefig(output_path+file_name+"_vector_rdf"+pcf_suffix+"_xy.png", bbox_inches = 'tight', pad_inches = 0, dpi = 300)
             plt.close()
             
             if gyromorphic_cf:
@@ -542,6 +560,8 @@ if __name__ == '__main__':
         default = False", default = False)
     parser.add_argument("-c", "--connected", action='store_true', help = "Switch to connected correlation functions\
         default = False", default = False)
+    parser.add_argument("--cut_circle", type = float, help = "Cut the system into a disk with that diameter, in units of the boxsize\
+        default = infinity (no cutting)", default = None)
     ## Plotting options
     parser.add_argument("--logscaleplot", action='store_true', help = "Use log scales on plots where it's an option\
         default = False", default = False)
@@ -597,6 +617,7 @@ if __name__ == '__main__':
     bin_width = args.bin_width
     periodic = not args.free_boundary_condition
     connected = args.connected
+    cut_circle = args.cut_circle
     
     logscaleplot = args.logscaleplot
     vmaxmax = args.vmaxmax
@@ -607,7 +628,7 @@ if __name__ == '__main__':
     
     main(input_file,
          columns = columns, fields_columns = fields_columns, skip = skip, phi = phi, starting_box_size=box_size,
-         bin_width=bin_width, periodic = periodic, connected=connected,
+         bin_width=bin_width, periodic = periodic, connected=connected, cut_circle=cut_circle,
          rdf = rdf, pcf = pcf, nn_order = nn_order, mean_nn_bound=mean_nn_bound, voronoi_quantities = voronoi_quantities, compute_boops=compute_boops, gyromorphic_cf = gyromorphic_cf, compute_furthest_sites = compute_furthest_sites,
          metric_clusters= metric_clusters,
          orientation_order = orientation_order, boop_orders= boop_orders, cluster_threshold = cluster_threshold, radial_bound=radial_bound, nn_bound=nn_bound,

@@ -319,6 +319,40 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         return (array_rdf, pyarray_field_corrs);
     }
 
+    
+    #[pyfn(m)]
+    fn compute_radial_correlations_2sphere<'py>(
+        py: Python<'py>,
+        points: Bound<'py, PyArrayDyn<f64>>,
+        field: Bound<'py, PyArrayDyn<f64>>,
+        binsize: f64,
+        connected: bool,
+    ) -> (Bound<'py,PyArray1<f64>>, Bound<'py,PyArray<f64, Dim<[usize; 2]>>>) {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+        let field_array = unsafe { field.as_array() }; // Same for field
+        let field_shape = field_array.shape(); // Need to feed npoints x fielddim values
+
+        assert!(
+            field_shape[0] == array.shape()[0],
+            "You must provide as many field lines as particles!"
+        );
+
+        // Mutate the data
+        // No need to return any value as the input data is mutated
+        let (rdf, field_corrs) = rust_fn::compute_radial_correlations_2sphere(
+            &array,
+            &field_array,
+            binsize,
+            connected,
+        );
+        let array_rdf = PyArray::from_vec(py, rdf);
+        let pyarray_field_corrs = PyArray::from_array(py, &field_corrs);
+
+        return (array_rdf, pyarray_field_corrs);
+    }
+    
     #[pyfn(m)]
     fn compute_2d_boops<'py>(
         py: Python<'py>,
@@ -1835,6 +1869,114 @@ mod rust_fn {
 
         return (rdf_vector, field_corrs_vector);
     }
+    
+    pub fn compute_radial_correlations_2sphere(
+        points: &ArrayViewD<'_, f64>,
+        fields: &ArrayViewD<'_, f64>,
+        binsize: f64,
+        connected: bool,
+    ) -> (Vec<f64>, Array<f64, Dim<[usize; 2]>>) {
+        // Check that the binsize is physical
+        assert!(
+            binsize > 0.0,
+            "Something is wrong with the binsize used for the RDF"
+        );
+
+        // get the needed parameters from the input
+        assert!(points.shape()[1] == 2, "Points on the sphere should have only two coordinates, theta and phi.");
+        let n_particles = points.shape()[0];
+        let field_dim = fields.shape()[1];
+        let max_dist = PI;
+        
+        let nbins = (max_dist / binsize).ceil() as usize;
+        let rdf: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
+        let field_corrs: Vec<Vec<Arc<RwLock<f64>>>> =
+            vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); field_dim]; nbins];
+
+        // compute the mean values of the quantities used in correlations
+        let mut mean_field: Vec<f64> = vec_no_clone![0.0; field_dim];
+        for dim in 0..field_dim {
+            mean_field[dim] = fields.slice(s![.., dim]).into_par_iter().sum();
+        }
+
+        for dim in 0..field_dim {
+            mean_field[dim] /= n_particles as f64;
+        }
+
+        // go through all pairs just once for all correlations and compute both rdf and the correlation
+        let counts: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
+        (0..n_particles).into_par_iter().for_each(|i| {
+            for j in i + 1..n_particles {
+                let thetai = points[[i, 0]];
+                let thetaj = points[[j, 0]];
+                let phii = points[[i, 1]];
+                let phij = points[[j, 1]];
+
+                let dist_ij = (thetai.cos() * thetaj.cos() + thetai.sin()* thetaj.sin() * (phii - phij).cos()).acos();
+                assert!(
+                    dist_ij >= 0.0 && dist_ij < max_dist,
+                    "Something is wrong with the distance between particles!"
+                );
+
+                // determine the relevant bin, and update the count at that bin for g(r)
+                let index = (dist_ij / binsize).floor() as usize;
+                *(counts[index].write().unwrap()) += 1.0;
+
+                // Also compute the field correlation
+                for k in 0..field_dim {
+                    if connected {
+                        *(field_corrs[index][k].write().unwrap()) +=
+                            (fields[[i, k]] - mean_field[k]) * (fields[[j, k]] - mean_field[k]);
+                    } else {
+                        *(field_corrs[index][k].write().unwrap()) +=
+                            fields[[i, k]] * fields[[j, k]];
+                    }
+                }
+            }
+        });
+
+        (0..nbins).into_par_iter().for_each(|bin| {
+            // normalise the values of the correlations by counts
+            let current_count = *counts[bin].read().unwrap();
+            if current_count != 0.0 {
+                for k in 0..field_dim {
+                    *(field_corrs[bin][k].write().unwrap()) /= current_count;
+                }
+
+                // THEN only, compute the rdf from counts
+                let bincenter = (bin as f64 + 0.5) * binsize;
+                // Use the actual normalization in a square, not the lazy one, if periodic
+                let normalisation = (n_particles as f64).powi(2) * binsize * bincenter.sin() / 4.0;
+                *(rdf[bin].write().unwrap()) =
+                    current_count / normalisation;
+            }
+        });
+
+        let mut rdf_vector = vec![0.0; nbins];
+        let mut field_corrs_vector = Array::<f64, _>::zeros((nbins, field_dim).f());
+        
+                
+        field_corrs_vector
+        .axis_iter_mut(Axis(0))
+        .into_par_iter()
+        .zip(rdf_vector.par_iter_mut())
+        .enumerate()
+        .for_each(|(bin, (mut field_bin, rdf_vector_bin))| {
+            *rdf_vector_bin = *rdf.get(bin).unwrap().read().unwrap();
+            for dim in 0..field_dim {
+                field_bin[dim] = *field_corrs
+                .get(bin)
+                .unwrap()
+                .get(dim)
+                .unwrap()
+                .read()
+                .unwrap();
+            }
+        });
+
+        return (rdf_vector, field_corrs_vector);
+    }
+
 
     pub fn compute_steinhardt_boops_2d(
         points_array: &ArrayViewD<'_, f64>,
