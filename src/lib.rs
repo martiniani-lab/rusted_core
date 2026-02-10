@@ -56,6 +56,25 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
         return array_rdf;
     }
+    
+    
+    #[pyfn(m)]
+    fn compute_vector_rdf2sphere<'py>(
+        py: Python<'py>,
+        points: Bound<'py, PyArrayDyn<f64>>,
+        binsize: f64,
+    ) -> Bound<'py, PyArray2<f64>> {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+
+        // Mutate the data
+        // No need to return any value as the input data is mutated
+        let vector_rdf = rust_fn::compute_vector_rdf_2sphere(&array, binsize);
+        let array_rdf = PyArray2::from_array(py, &vector_rdf);
+
+        return array_rdf;
+    }
 
     
     #[pyfn(m)]
@@ -1286,6 +1305,73 @@ mod rust_fn {
 
         return rdf_vector;
     }
+
+
+    pub fn compute_vector_rdf_2sphere(
+        points: &ArrayViewD<'_, f64>,
+        binsize: f64,
+    ) -> Array<f64, Dim<[usize; 2]>> {
+        // Check that the binsize is physical
+        assert!(
+            binsize > 0.0,
+            "Something is wrong with the binsize used for the RDF"
+        );
+
+        let nbins_theta = (PI / binsize).ceil() as usize;
+        let nbins_phi = (2.0 * PI / binsize).ceil() as usize;
+
+        let n_particles = points.shape()[0];
+        let rdf: Vec<Vec<Arc<RwLock<f64>>>> =
+            vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins_phi]; nbins_theta];
+
+        (0..n_particles).into_par_iter().for_each(|i| {
+            for j in 0..n_particles {
+                let thetai = points[[i, 0]];
+                let thetaj = points[[j, 0]];
+                let phii = points[[i, 1]];
+                let phij = points[[j, 1]];
+                
+                let (dist_theta, dist_phi) = relative_distance_vec_spherical(thetai,phii, thetaj, phij);
+                
+                // determine the relevant bin, and update the count at that bin
+                let index_x = (dist_theta / binsize).floor() as usize;
+                let index_y = (dist_phi / binsize).floor() as usize;
+                *(rdf[index_x][index_y].write().unwrap()) += 1.0;
+            }
+        });
+        
+        let mut rdf_vector = Array::<f64, _>::zeros((nbins_theta, nbins_phi).f());
+        Zip::indexed(&mut rdf_vector).par_for_each(|(i, j), rdf_val| {
+            *rdf_val = *rdf
+            .get(i)
+            .unwrap()
+            .get(j)
+            .unwrap()
+            .read()
+            .unwrap();
+        });
+
+        return rdf_vector;
+    }
+    
+    pub fn relative_distance_vec_spherical(thetaref: f64, phiref: f64, theta: f64, phi: f64) -> (f64, f64) {
+        
+        // I think it's necessary to go through Cartesian for this unfortunately
+        let r = vec![theta.sin() * phi.cos(),theta.sin() * phi.sin(),theta.cos()];
+        
+        // Rotate by -phiref around z first
+        let r_rotated_once = vec![r[0]*phiref.cos() + r[1] * phiref.sin(), - r[0] * phiref.sin() + r[1] * phiref.cos(), r[2] ];
+        
+        // Rotate by +thetaref around y then
+        let r_rotated_twice = vec![r_rotated_once[0]*thetaref.cos() - r_rotated_once[2] * thetaref.sin(),r_rotated_once[1],r_rotated_once[0]*thetaref.sin() + r_rotated_once[2] * thetaref.cos()];
+        
+        // Measure the spherical angles of the newly obtained vector
+        let theta_relative = r_rotated_twice[2].acos();
+        let phi_relative = atan2(r_rotated_twice[1], r_rotated_twice[0]).in_radians() + PI;
+        
+        (theta_relative, phi_relative)
+        
+    }
     
     pub fn ensure_periodicity(v: &mut Vec<f64>, box_lengths: &Vec<f64>) {
         
@@ -1431,7 +1517,8 @@ mod rust_fn {
                 let dist_ij = hypot(r_ij[0], r_ij[1]);
                 assert!(
                     dist_ij >= 0.0 && dist_ij < max_dist,
-                    "Something is wrong with the distance between particles!"
+                    "Something is wrong with the distance between particles!\nDistance: {:?}",
+                    dist_ij
                 );
 
                 // determine the relevant bin, and update the count at that bin for g(r)
@@ -1694,7 +1781,8 @@ mod rust_fn {
                 let dist_ij = hypot(r_ij[0], r_ij[1]);
                 assert!(
                     dist_ij >= 0.0 && dist_ij < max_dist,
-                    "Something is wrong with the distance between particles!"
+                    "Something is wrong with the distance between particles!\nDistance: {:?}",
+                    dist_ij
                 );
 
                 // determine the relevant bin, and update the count at that bin for g(r)
@@ -1809,7 +1897,8 @@ mod rust_fn {
                 let dist_ij = hypot(hypot(r_ij[0], r_ij[1]), r_ij[2]);
                 assert!(
                     dist_ij >= 0.0 && dist_ij < max_dist,
-                    "Something is wrong with the distance between particles!"
+                    "Something is wrong with the distance between particles!\nDistance: {:?}",
+                    dist_ij
                 );
 
                 // determine the relevant bin, and update the count at that bin for g(r)
@@ -1914,8 +2003,9 @@ mod rust_fn {
 
                 let dist_ij = (thetai.cos() * thetaj.cos() + thetai.sin()* thetaj.sin() * (phii - phij).cos()).acos();
                 assert!(
-                    dist_ij >= 0.0 && dist_ij < max_dist,
-                    "Something is wrong with the distance between particles!"
+                    dist_ij >= 0.0 && dist_ij <= max_dist,
+                    "Something is wrong with the distance between particles!\nDistance: {:?}",
+                    dist_ij
                 );
 
                 // determine the relevant bin, and update the count at that bin for g(r)
