@@ -2001,11 +2001,19 @@ mod rust_fn {
                 let phii = points[[i, 1]];
                 let phij = points[[j, 1]];
 
-                let dist_ij = (thetai.cos() * thetaj.cos() + thetai.sin()* thetaj.sin() * (phii - phij).cos()).acos();
+                let mut cos_dist_ij = thetai.cos() * thetaj.cos() + thetai.sin()* thetaj.sin() * (phii - phij).cos();
+                // Deal with float precision issues at the extremes
+                if cos_dist_ij < -1.0 {
+                    cos_dist_ij = -1.0;
+                } else if cos_dist_ij > 1.0 {
+                    cos_dist_ij = 1.0;
+                }
+                
+                let dist_ij = cos_dist_ij.acos();
                 assert!(
                     dist_ij >= 0.0 && dist_ij <= max_dist,
-                    "Something is wrong with the distance between particles!\nDistance: {:?}",
-                    dist_ij
+                    "Something is wrong with the distance between particles!\nDistance: {:?}, Cos distance {:?}",
+                    dist_ij, cos_dist_ij
                 );
 
                 // determine the relevant bin, and update the count at that bin for g(r)
