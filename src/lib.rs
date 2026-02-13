@@ -623,6 +623,24 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         let reduced_variances = rust_fn::point_variances(&array, &radii, &vec![box_size; ndim], n_samples, periodic);
         reduced_variances.into_pyarray(py)
     }
+    
+    #[pyfn(m)]
+    fn point_variances_2sphere<'py>(
+        py: Python<'py>,
+        x: Bound<'py, PyArrayDyn<f64>>,
+        radii: Bound<'py, PyArray1<f64>>,
+        n_samples: usize,
+    ) -> Bound<'py, PyArray1<f64>> {
+        // First we convert the Python numpy array into Rust ndarray
+        // Here, you can specify different array sizes and types.
+        let array = unsafe { x.as_array() }; // Convert to ndarray type
+        let radii = unsafe { radii.as_array() }; // Convert to ndarray type
+        
+        // Mutate the data
+        // No need to return any value as the input data is mutated
+        let reduced_variances = rust_fn::point_variances_2sphere(&array, &radii,  n_samples);
+        reduced_variances.into_pyarray(py)
+    }
 
     #[pyfn(m)]
     fn metric_neighbors<'py>(
@@ -701,7 +719,7 @@ mod rust_fn {
     use geo::algorithm::area::Area;
     use geo::{LineString, Polygon};
     
-    use rand::Rng;
+    use rand::RngExt;
     use rstar::{RTree, primitives::GeomWithData};
 
     // Vectors of RwLocks cannot be initialized with a clone!
@@ -2445,7 +2463,6 @@ mod rust_fn {
 
                 cluster_id.par_iter_mut().enumerate().for_each( | (i, id)  |  {
                     // Here the fast option is to go through nearest neighbors and update based on that
-                    // XXX
                     
                     let mut neighbor_with_distance_2_iter = rtree.nearest_neighbor_iter_with_distance_2(&[points_array[[i,0]], points_array[[i,1]], points_array[[i,2]]]).skip(1);
                     let mut still_neighbors = true;
@@ -2754,6 +2771,58 @@ mod rust_fn {
         
     }
     
+    pub fn point_variances_2sphere(points: &ArrayViewD<'_, f64>, radii: &ArrayView1<'_, f64>, n_samples: usize) -> Vec<f64> {
+
+        let n_radii = radii.shape()[0];
+        let means  = vec_no_clone![Arc::new(RwLock::new(0.0_f64)); n_radii];
+        let means2 = vec_no_clone![Arc::new(RwLock::new(0.0_f64)); n_radii];
+
+        let npoints = points.shape()[0];
+        let ndim = points.shape()[1];
+
+        assert!(npoints > 1);
+        assert!(ndim == 2, "Expected points in theta, phi representation"); // Expect points in theta, phi representation
+
+        let points_euclidean = euclidean_from_spherical(&points);
+        let indices = Array::from_iter(0..npoints);
+
+        // Decorated rstar with index of particle to find spherical coordinates again
+        let rtree_positions = compute_decorated_rstar_tree_3d(&points_euclidean.into_dyn().view(), &indices.view(), 2.0, 2.0, 2.0, false);
+
+        // Throw points at random: this can be parallelized if necessary
+        radii.to_vec().into_iter().enumerate().for_each(|(current_index,radius)| {
+            (0..n_samples).into_par_iter().for_each( |_sample| {
+
+                let mut rng = rand::rng();
+
+                let mut random: f64 = rng.random();
+                let phi_center = 2.0 * PI * random; 
+                random = rng.random();
+                let theta_center = (2.0 * random - 1.0).acos();
+
+                let r_center = euclidean_from_spherical_single_point(theta_center, phi_center, &[1.0,1.0,1.0]).to_vec();
+                // The Euclidean distance is a LOWER BOUND of the geodetic distance on the sphere
+                // Thus, all neighbors by the great-circle distance at some cutoff are a subset of the Euclidean neighbors at the same distance
+                let count = count_points_in_disk_2sphere(&rtree_positions, &points, r_center, radius);
+
+                *means.get(current_index).unwrap().write().unwrap() += count as f64;
+                *means2.get(current_index).unwrap().write().unwrap() += (count*count) as f64;
+                
+            });
+        });
+
+        let mut reduced_variances = Vec::new();
+        for index in 0..n_radii {
+            let current_mean = *means.get(index).unwrap().read().unwrap() / n_samples as f64;
+            let current_mean2 = *means2.get(index).unwrap().read().unwrap() / n_samples as f64;
+
+            let reduced_variance = current_mean2/ (current_mean*current_mean) - 1.0;
+            reduced_variances.push(reduced_variance)
+        }
+
+        return reduced_variances;
+    }
+    
     pub fn count_points_in_disk(rtree: &RTree<[f64;2]>, r_center: Vec<f64>, radius: f64) -> usize {
 
         let centerpoint = [r_center[0], r_center[1]];
@@ -2777,6 +2846,45 @@ mod rust_fn {
         let count = points.len();
 
         return count
+    }
+    
+        pub fn count_points_in_disk_2sphere(rtree: &RTree<GeomWithData<[f64;3],usize>>, spherical_points: &ArrayViewD<'_, f64>, r_center: Vec<f64>, radius: f64) -> usize {
+
+        // let centerpoint: Point3<f64> = Point3::new(r_center[0], r_center[1], r_center[2]);
+        let centerpoint = [r_center[0], r_center[1], r_center[2]];
+        let centerpoint_spherical = [r_center[2].acos(), atan2(r_center[1], r_center[0]).in_radians()];
+
+        // let points = rtree.lookup_in_circle(&centerpoint, &(radius*radius));
+        let points = rtree.locate_within_distance(centerpoint, radius*radius).collect::<Vec<_>>();
+        // Need to find, within these candidates, which points are actually within the disk in geodetic distance
+        let count: usize = points.into_par_iter().map(|point_with_index| {
+            let point_index = point_with_index.data;
+            let point_spherical = [spherical_points[[point_index,0]], spherical_points[[point_index,1]]];
+            let dist = great_circle_distance(&centerpoint_spherical, &point_spherical);
+            let is_neighbor = if dist < radius { 1 } else { 0 } as usize;
+            is_neighbor
+        }).collect::<Vec<usize>>().into_par_iter().sum();
+
+        return count
+    }
+    
+    pub fn great_circle_distance(point1: &[f64;2], point2: &[f64;2]) -> f64 {
+        
+        point1[0].cos() * point2[0].cos() + point1[0].sin() * point2[0].sin() * (point1[1] - point2[1]).cos()
+        
+    }
+    
+    pub fn euclidean_from_spherical(points: &ArrayViewD<'_, f64>) -> Array<f64, Dim<[usize; 2]>> {
+        
+        points.axis_iter(Axis(0)).into_par_iter().map(|point| {
+            euclidean_from_spherical_single_point(point[[0]], point[[1]], &[1.0,1.0,1.0])
+        }).collect::<Vec<[f64;3]>>().into()
+
+    }
+    
+    pub fn euclidean_from_spherical_single_point(theta: f64, phi: f64, center: &[f64;3]) -> [f64; 3] {
+        let sin_theta = theta.sin();
+        [center[0] + sin_theta * phi.cos(),center[1] + sin_theta * phi.sin(),center[2] + theta.cos() ]
     }
 
     pub fn compute_periodic_rstar_tree(
