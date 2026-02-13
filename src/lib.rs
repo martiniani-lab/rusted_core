@@ -2800,11 +2800,11 @@ mod rust_fn {
                 random = rng.random();
                 let theta_center = (2.0 * random - 1.0).acos();
 
-                let r_center = euclidean_from_spherical_single_point(theta_center, phi_center, &[1.0,1.0,1.0]).to_vec();
+                let r_center = [theta_center, phi_center];
                 // The Euclidean distance is a LOWER BOUND of the geodetic distance on the sphere
                 // Thus, all neighbors by the great-circle distance at some cutoff are a subset of the Euclidean neighbors at the same distance
                 let count = count_points_in_disk_2sphere(&rtree_positions, &points, r_center, radius);
-
+                
                 *means.get(current_index).unwrap().write().unwrap() += count as f64;
                 *means2.get(current_index).unwrap().write().unwrap() += (count*count) as f64;
                 
@@ -2848,14 +2848,13 @@ mod rust_fn {
         return count
     }
     
-        pub fn count_points_in_disk_2sphere(rtree: &RTree<GeomWithData<[f64;3],usize>>, spherical_points: &ArrayViewD<'_, f64>, r_center: Vec<f64>, radius: f64) -> usize {
+        pub fn count_points_in_disk_2sphere(rtree: &RTree<GeomWithData<[f64;3],usize>>, spherical_points: &ArrayViewD<'_, f64>, centerpoint_spherical: [f64; 2], radius: f64) -> usize {
 
         // let centerpoint: Point3<f64> = Point3::new(r_center[0], r_center[1], r_center[2]);
-        let centerpoint = [r_center[0], r_center[1], r_center[2]];
-        let centerpoint_spherical = [r_center[2].acos(), atan2(r_center[1], r_center[0]).in_radians()];
+        let centerpoint_euclidean = euclidean_from_spherical_single_point(centerpoint_spherical[0], centerpoint_spherical[1]);
 
         // let points = rtree.lookup_in_circle(&centerpoint, &(radius*radius));
-        let points = rtree.locate_within_distance(centerpoint, radius*radius).collect::<Vec<_>>();
+        let points = rtree.locate_within_distance(centerpoint_euclidean, radius*radius).collect::<Vec<_>>();
         // Need to find, within these candidates, which points are actually within the disk in geodetic distance
         let count: usize = points.into_par_iter().map(|point_with_index| {
             let point_index = point_with_index.data;
@@ -2870,21 +2869,21 @@ mod rust_fn {
     
     pub fn great_circle_distance(point1: &[f64;2], point2: &[f64;2]) -> f64 {
         
-        point1[0].cos() * point2[0].cos() + point1[0].sin() * point2[0].sin() * (point1[1] - point2[1]).cos()
+        (point1[0].cos() * point2[0].cos() + point1[0].sin() * point2[0].sin() * (point1[1] - point2[1]).cos()).acos()
         
     }
     
     pub fn euclidean_from_spherical(points: &ArrayViewD<'_, f64>) -> Array<f64, Dim<[usize; 2]>> {
         
         points.axis_iter(Axis(0)).into_par_iter().map(|point| {
-            euclidean_from_spherical_single_point(point[[0]], point[[1]], &[1.0,1.0,1.0])
+            euclidean_from_spherical_single_point(point[[0]], point[[1]])
         }).collect::<Vec<[f64;3]>>().into()
 
     }
     
-    pub fn euclidean_from_spherical_single_point(theta: f64, phi: f64, center: &[f64;3]) -> [f64; 3] {
+    pub fn euclidean_from_spherical_single_point(theta: f64, phi: f64) -> [f64; 3] {
         let sin_theta = theta.sin();
-        [center[0] + sin_theta * phi.cos(),center[1] + sin_theta * phi.sin(),center[2] + theta.cos() ]
+        [sin_theta * phi.cos(), sin_theta * phi.sin(), theta.cos() ]
     }
 
     pub fn compute_periodic_rstar_tree(
