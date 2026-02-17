@@ -694,6 +694,51 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         return neighbor_counts;
     }
     
+    
+    #[pyfn(m)]
+    fn metric_neighbors_2sphere<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        radii: &Bound<'py, PyArray1<f64>>,
+        threshold: f64
+    ) -> Bound<'py, PyArray1<usize>> {
+        
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+        let radii_array = unsafe { radii.as_array() }; // Same for radii
+        
+        let neighbor_counts = rust_fn::count_metric_neighbors_2sphere(
+            &array,
+            &radii_array,
+            threshold
+        );
+        let neighbor_counts = PyArray1::from_vec(py, neighbor_counts);
+        
+        return neighbor_counts;
+    }
+    
+    #[pyfn(m)]
+    fn monodisperse_metric_neighbors_2sphere<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        radius: f64,
+        threshold: f64
+    ) -> Bound<'py, PyArray1<usize>> {
+        
+        let array = unsafe { points.as_array() }; // Convert to ndarray type
+        let n_particles = array.shape()[0];
+        let radii_array_owned = Array::from_elem(n_particles, radius);
+        let radii_array = radii_array_owned.view();
+        
+        let neighbor_counts = rust_fn::count_metric_neighbors_2sphere(
+            &array,
+            &radii_array,
+            threshold
+        );
+        let neighbor_counts = PyArray1::from_vec(py, neighbor_counts);
+        
+        return neighbor_counts;
+    }
+    
     Ok(())
 }
 
@@ -2725,6 +2770,7 @@ mod rust_fn {
         assert!(box_lengths.len() == ndim);
         
         let max_radius = *radii.into_par_iter().max_by(|a, b| a.total_cmp(b)).unwrap();
+        let threshold2 = threshold * threshold;
 
         if ndim == 2 { // 2D case
 
@@ -2738,9 +2784,9 @@ mod rust_fn {
                 while still_neighbors {
                     let (neighbor, dist2) = neighbor_with_distance_2_iter.next().unwrap();
                     let neighbor_radius = neighbor.data;
-                    if dist2 <= threshold * (radius + neighbor_radius).powi(2) {
+                    if dist2 <= threshold2 * (radius + neighbor_radius).powi(2) {
                         *count += 1;
-                    } else if dist2 >= threshold * (radius + max_radius).powi(2) {
+                    } else if dist2 >= threshold2 * (radius + max_radius).powi(2) {
                         still_neighbors = false;
                     }
                 }
@@ -2821,6 +2867,58 @@ mod rust_fn {
         }
 
         return reduced_variances;
+    }
+    
+    pub fn count_metric_neighbors_2sphere(points: &ArrayViewD<'_, f64>, radii: &ArrayView1<'_, f64>, threshold: f64) -> Vec<usize> {
+        
+        let npoints = points.shape()[0];
+        let ndim = points.shape()[1];
+        
+        let mut neighbor_counts = vec!(0; npoints);
+        
+        assert!(npoints > 1);
+        assert!(ndim == 2); // Assumes theta,phi format
+        
+        let max_radius = *radii.into_par_iter().max_by(|a, b| a.total_cmp(b)).unwrap();
+        let threshold2 = threshold * threshold;
+        
+        let points_euclidean = euclidean_from_spherical(&points);
+        let indices = Array::from_iter(0..npoints);
+
+        // Decorated rstar with index of particle to find spherical coordinates again
+        let rtree_positions = compute_decorated_rstar_tree_3d(&points_euclidean.into_dyn().view(), &indices.view(), 2.0, 2.0, 2.0, false);
+
+        radii.to_vec().into_par_iter().zip(neighbor_counts.par_iter_mut()).enumerate().for_each(|(current_index,(radius, count))| {
+            let mut neighbor_with_distance_2_iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&[points[[current_index,0]], points[[current_index,1]],points[[current_index,2]]]).skip(1);
+            let mut still_neighbors = true;
+            while still_neighbors {
+                let (neighbor, dist2) = neighbor_with_distance_2_iter.next().unwrap();
+                let neighbor_index = neighbor.data;
+                
+                let neighbor_radius = radii[neighbor_index];
+                
+                // The euclidean distance is a LOWER bound of the geodesic distance
+                // Thus, if the Euclidean distance is bigger than the threshold, the loop can be broken
+                if dist2 >= threshold2 * (radius + max_radius).powi(2) {
+                    still_neighbors = false;
+                } else { 
+                    // Have to check the geodesic distance
+                    let current_point = [points[[current_index,0]], points[[current_index,2]]];
+                    let neighbor_point = [points[[neighbor_index,0]], points[[neighbor_index,2]]];
+                    let geodesic_distance = great_circle_distance(&current_point, &neighbor_point);
+                    let geodesic_dist2 = geodesic_distance * geodesic_distance;
+                    
+                    if geodesic_dist2 <= threshold2 * (radius + neighbor_radius).powi(2) {
+                        *count += 1;
+                    } else if geodesic_dist2 >= threshold2 * (radius + max_radius).powi(2) {
+                    still_neighbors = false;
+                    }
+                }
+            }
+        });
+        
+        return neighbor_counts;
+        
     }
     
     pub fn count_points_in_disk(rtree: &RTree<[f64;2]>, r_center: Vec<f64>, radius: f64) -> usize {
