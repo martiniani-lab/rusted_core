@@ -6,6 +6,13 @@ use pyo3::prelude::{pymodule, PyModule, PyResult, Python, Bound};
 // * numpy defaults to np.float64, if you use other type than f64 in Rust
 //   you will have to change type in Python before calling the Rust function.
 
+mod geometry;
+mod spatial;
+mod vector_rdf;
+mod radial;
+mod voronoi;
+mod neighbors;
+
 // The name of the module must be the same as the rust package name
 #[pymodule]
 fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -25,16 +32,9 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         binsize: f64,
         periodic: bool,
     ) -> Bound<'py, PyArray2<f64>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-
-        // Mutate the data
-        // No need to return any value as the input data is mutated
-        let vector_rdf = rust_fn::compute_vector_rdf_2d(&array, box_size, box_size, binsize, periodic);
-        let array_rdf = PyArray2::from_array(py, &vector_rdf);
-
-        return array_rdf;
+        let array = unsafe { points.as_array() };
+        let result = vector_rdf::compute_vector_rdf_2d(&array, box_size, box_size, binsize, periodic);
+        PyArray2::from_array(py, &result)
     }
 
     #[pyfn(m)]
@@ -45,38 +45,22 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         binsize: f64,
         periodic: bool,
     ) -> Bound<'py, PyArray3<f64>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-
-        // Mutate the data
-        // No need to return any value as the input data is mutated
-        let vector_rdf = rust_fn::compute_vector_rdf_3d(&array, box_size, box_size, box_size, binsize, periodic);
-        let array_rdf = PyArray3::from_array(py, &vector_rdf);
-
-        return array_rdf;
+        let array = unsafe { points.as_array() };
+        let result = vector_rdf::compute_vector_rdf_3d(&array, box_size, box_size, box_size, binsize, periodic);
+        PyArray3::from_array(py, &result)
     }
-    
-    
+
     #[pyfn(m)]
     fn compute_vector_rdf2sphere<'py>(
         py: Python<'py>,
         points: Bound<'py, PyArrayDyn<f64>>,
         binsize: f64,
     ) -> Bound<'py, PyArray2<f64>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-
-        // Mutate the data
-        // No need to return any value as the input data is mutated
-        let vector_rdf = rust_fn::compute_vector_rdf_2sphere(&array, binsize);
-        let array_rdf = PyArray2::from_array(py, &vector_rdf);
-
-        return array_rdf;
+        let array = unsafe { points.as_array() };
+        let result = vector_rdf::compute_vector_rdf_2sphere(&array, binsize);
+        PyArray2::from_array(py, &result)
     }
 
-    
     #[pyfn(m)]
     fn compute_bounded_vector_rdf2d<'py>(
         py: Python<'py>,
@@ -86,19 +70,11 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         radial_bound: f64,
         periodic: bool,
     ) -> Bound<'py, PyArray2<f64>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-
-        // Mutate the data
-        // No need to return any value as the input data is mutated
-        let vector_rdf = rust_fn::compute_bounded_vector_rdf_2d(&array, box_size, box_size, binsize, radial_bound, periodic);
-        let array_rdf = PyArray2::from_array(py, &vector_rdf);
-
-        return array_rdf;
+        let array = unsafe { points.as_array() };
+        let result = vector_rdf::compute_bounded_vector_rdf_2d(&array, box_size, box_size, binsize, radial_bound, periodic);
+        PyArray2::from_array(py, &result)
     }
-    
-    
+
     #[pyfn(m)]
     fn compute_nnbounded_vector_rdf2d<'py>(
         py: Python<'py>,
@@ -108,18 +84,11 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         nn_bound: usize,
         periodic: bool,
     ) -> Bound<'py, PyArray2<f64>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-
-        // Mutate the data
-        // No need to return any value as the input data is mutated
-        let vector_rdf = rust_fn::compute_nnbounded_vector_rdf_2d(&array, box_size, box_size, binsize, nn_bound, periodic);
-        let array_rdf = PyArray2::from_array(py, &vector_rdf);
-
-        return array_rdf;
+        let array = unsafe { points.as_array() };
+        let result = vector_rdf::compute_nnbounded_vector_rdf_2d(&array, box_size, box_size, binsize, nn_bound, periodic);
+        PyArray2::from_array(py, &result)
     }
-    
+
     #[pyfn(m)]
     fn compute_pnn_vector_rdf2d<'py>(
         py: Python<'py>,
@@ -129,25 +98,12 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         binsize: f64,
         periodic: bool
     ) -> Bound<'py, PyArray2<f64>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-        
+        let array = unsafe { points.as_array() };
         assert!(p>0, "Order for pth-nn distribution needs to be natural integer");
-
-        let pnn_vector_rdf = rust_fn::compute_pnn_vector_rdf_2d(
-            &array,
-            box_size,
-            box_size,
-            binsize,
-            p,
-            periodic
-        );
-        let array_pnn_rdf = PyArray2::from_array(py, &pnn_vector_rdf);
-        
-        return array_pnn_rdf;
+        let result = vector_rdf::compute_pnn_vector_rdf_2d(&array, box_size, box_size, binsize, p, periodic);
+        PyArray2::from_array(py, &result)
     }
-    
+
     #[pyfn(m)]
     fn compute_pnn_rdf<'py>(
         py: Python<'py>,
@@ -157,21 +113,14 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         binsize: f64,
         periodic: bool
     ) -> Bound<'py, PyArray1<f64>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-        
+        let array = unsafe { points.as_array() };
         assert!(nn_order>0, "Order for pth-nn distribution needs to be natural integer");
         let ndim = array.shape()[1];
         let box_lengths = vec![box_size; ndim];
-        
-
-        let pnn_rdf = rust_fn::compute_pnn_rdf(&array, &box_lengths, binsize, nn_order, periodic);
-        let array_pnn_rdf = PyArray1::from_vec(py, pnn_rdf);
-        
-        return array_pnn_rdf;
+        let result = radial::compute_pnn_rdf(&array, &box_lengths, binsize, nn_order, periodic);
+        PyArray1::from_vec(py, result)
     }
-    
+
     #[pyfn(m)]
     fn compute_bounded_vector_rdf3d<'py>(
         py: Python<'py>,
@@ -181,18 +130,11 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         radial_bound: f64,
         periodic: bool,
     ) -> Bound<'py, PyArray3<f64>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-
-        // Mutate the data
-        // No need to return any value as the input data is mutated
-        let vector_rdf = rust_fn::compute_bounded_vector_rdf_3d(&array, box_size, box_size, box_size, binsize, radial_bound, periodic);
-        let array_rdf = PyArray3::from_array(py, &vector_rdf);
-
-        return array_rdf;
+        let array = unsafe { points.as_array() };
+        let result = vector_rdf::compute_bounded_vector_rdf_3d(&array, box_size, box_size, box_size, binsize, radial_bound, periodic);
+        PyArray3::from_array(py, &result)
     }
-    
+
     #[pyfn(m)]
     fn compute_nnbounded_vector_rdf3d<'py>(
         py: Python<'py>,
@@ -202,18 +144,11 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         nn_bound: usize,
         periodic: bool,
     ) -> Bound<'py, PyArray3<f64>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-
-        // Mutate the data
-        // No need to return any value as the input data is mutated
-        let vector_rdf = rust_fn::compute_nnbounded_vector_rdf_3d(&array, box_size, box_size, box_size, binsize, nn_bound, periodic);
-        let array_rdf = PyArray3::from_array(py, &vector_rdf);
-
-        return array_rdf;
+        let array = unsafe { points.as_array() };
+        let result = vector_rdf::compute_nnbounded_vector_rdf_3d(&array, box_size, box_size, box_size, binsize, nn_bound, periodic);
+        PyArray3::from_array(py, &result)
     }
-    
+
     #[pyfn(m)]
     fn compute_vector_gyromorphic_corr_2d<'py>(
         py: Python<'py>,
@@ -223,18 +158,11 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         periodic: bool,
         order: u64,
     ) -> (Bound<'py,PyArray2<f64>>, Bound<'py,PyArray<f64, Dim<[usize; 3]>>>) {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-
-        // Mutate the data
-        // No need to return any value as the input data is mutated
-        let (vector_rdf, vector_corr) =
-            rust_fn::compute_vector_gyromorphic_corr_2d(&array, box_size, binsize, periodic, order);
-        let array_rdf = PyArray2::from_array(py, &vector_rdf);
-        let array_corr = PyArray::from_array(py, &vector_corr);
-
-        return (array_rdf, array_corr);
+        let array = unsafe { points.as_array() };
+        let (rdf, corr) = vector_rdf::compute_vector_gyromorphic_corr_2d(&array, box_size, binsize, periodic, order);
+        let array_rdf = PyArray2::from_array(py, &rdf);
+        let array_corr = PyArray::from_array(py, &corr);
+        (array_rdf, array_corr)
     }
 
     #[pyfn(m)]
@@ -247,32 +175,21 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         periodic: bool,
         connected: bool,
     ) -> (Bound<'py,PyArray1<f64>>, Bound<'py,PyArray<f64, Dim<[usize; 2]>>>) {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-        let field_array = unsafe { field.as_array() }; // Same for field
-        let field_shape = field_array.shape(); // Need to feed npoints x fielddim values
+        let array = unsafe { points.as_array() };
+        let field_array = unsafe { field.as_array() };
+        let field_shape = field_array.shape();
 
         assert!(
             field_shape[0] == array.shape()[0],
             "You must provide as many field lines as particles!"
         );
 
-        // Mutate the data
-        // No need to return any value as the input data is mutated
-        let (rdf, field_corrs) = rust_fn::compute_radial_correlations_2d(
-            &array,
-            &field_array,
-            box_size,
-            box_size,
-            binsize,
-            periodic,
-            connected,
+        let (rdf, field_corrs) = radial::compute_radial_correlations_2d(
+            &array, &field_array, box_size, box_size, binsize, periodic, connected,
         );
         let array_rdf = PyArray::from_vec(py, rdf);
         let pyarray_field_corrs = PyArray::from_array(py, &field_corrs);
-
-        return (array_rdf, pyarray_field_corrs);
+        (array_rdf, pyarray_field_corrs)
     }
 
     #[pyfn(m)]
@@ -284,19 +201,13 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         periodic: bool,
         order: u64,
     ) -> (Bound<'py,PyArray1<f64>>, Bound<'py,PyArray<f64, Dim<[usize; 2]>>>) {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-
-        // Mutate the data
-        // No need to return any value as the input data is mutated
-        let (rdf, radial_corr) = rust_fn::compute_radial_gyromorphic_corr_2d(
+        let array = unsafe { points.as_array() };
+        let (rdf, radial_corr) = radial::compute_radial_gyromorphic_corr_2d(
             &array, box_size, box_size, binsize, periodic, order,
         );
         let array_rdf = PyArray::from_vec(py, rdf);
         let array_corr = PyArray::from_array(py, &radial_corr);
-
-        return (array_rdf, array_corr);
+        (array_rdf, array_corr)
     }
 
     #[pyfn(m)]
@@ -309,36 +220,23 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         periodic: bool,
         connected: bool,
     ) -> (Bound<'py,PyArray1<f64>>, Bound<'py,PyArray<f64, Dim<[usize; 2]>>>) {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-        let field_array = unsafe { field.as_array() }; // Same for field
-        let field_shape = field_array.shape(); // Need to feed npoints x fielddim values
+        let array = unsafe { points.as_array() };
+        let field_array = unsafe { field.as_array() };
+        let field_shape = field_array.shape();
 
         assert!(
             field_shape[0] == array.shape()[0],
             "You must provide as many field lines as particles!"
         );
 
-        // Mutate the data
-        // No need to return any value as the input data is mutated
-        let (rdf, field_corrs) = rust_fn::compute_radial_correlations_3d(
-            &array,
-            &field_array,
-            box_size,
-            box_size,
-            box_size,
-            binsize,
-            periodic,
-            connected,
+        let (rdf, field_corrs) = radial::compute_radial_correlations_3d(
+            &array, &field_array, box_size, box_size, box_size, binsize, periodic, connected,
         );
         let array_rdf = PyArray::from_vec(py, rdf);
         let pyarray_field_corrs = PyArray::from_owned_array(py, field_corrs);
-
-        return (array_rdf, pyarray_field_corrs);
+        (array_rdf, pyarray_field_corrs)
     }
 
-    
     #[pyfn(m)]
     fn compute_radial_correlations_2sphere<'py>(
         py: Python<'py>,
@@ -347,31 +245,23 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         binsize: f64,
         connected: bool,
     ) -> (Bound<'py,PyArray1<f64>>, Bound<'py,PyArray<f64, Dim<[usize; 2]>>>) {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-        let field_array = unsafe { field.as_array() }; // Same for field
-        let field_shape = field_array.shape(); // Need to feed npoints x fielddim values
+        let array = unsafe { points.as_array() };
+        let field_array = unsafe { field.as_array() };
+        let field_shape = field_array.shape();
 
         assert!(
             field_shape[0] == array.shape()[0],
             "You must provide as many field lines as particles!"
         );
 
-        // Mutate the data
-        // No need to return any value as the input data is mutated
-        let (rdf, field_corrs) = rust_fn::compute_radial_correlations_2sphere(
-            &array,
-            &field_array,
-            binsize,
-            connected,
+        let (rdf, field_corrs) = radial::compute_radial_correlations_2sphere(
+            &array, &field_array, binsize, connected,
         );
         let array_rdf = PyArray::from_vec(py, rdf);
         let pyarray_field_corrs = PyArray::from_array(py, &field_corrs);
-
-        return (array_rdf, pyarray_field_corrs);
+        (array_rdf, pyarray_field_corrs)
     }
-    
+
     #[pyfn(m)]
     fn compute_2d_boops<'py>(
         py: Python<'py>,
@@ -380,23 +270,12 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         box_size: f64,
         periodic: bool,
     ) -> Bound<'py, PyArray<f64, Dim<[usize; 3]>>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-        let boop_order_array = unsafe { orders.as_array() }; // Same for field
-
-        let boops = rust_fn::compute_steinhardt_boops_2d(
-            &array,
-            &boop_order_array,
-            box_size,
-            box_size,
-            periodic
-        );
-        let array_boops = PyArray::from_array(py, &boops);
-
-        return array_boops;
+        let array = unsafe { points.as_array() };
+        let boop_order_array = unsafe { orders.as_array() };
+        let boops = voronoi::compute_steinhardt_boops_2d(&array, &boop_order_array, box_size, box_size, periodic);
+        PyArray::from_array(py, &boops)
     }
-    
+
     #[pyfn(m)]
     fn compute_2d_all_voronoi_quantities<'py>(
         py: Python<'py>,
@@ -404,27 +283,16 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         box_size: f64,
         periodic: bool
     ) -> (Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<usize>>, Bound<'py, PyArray1<f64>> ) {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-
-        let (areas, neighbour_counts, nn_distances) = rust_fn::compute_voronoi_quantities_2d(
-            &array,
-            box_size,
-            box_size,
-            periodic,
-            true,
-            true,
-            true
+        let array = unsafe { points.as_array() };
+        let (areas, neighbour_counts, nn_distances) = voronoi::compute_voronoi_quantities_2d(
+            &array, box_size, box_size, periodic, true, true, true
         );
         let array_areas = PyArray1::from_vec(py, areas.unwrap());
         let array_neighbour_counts = PyArray1::from_vec(py, neighbour_counts.unwrap());
         let array_nn_distances = PyArray1::from_vec(py, nn_distances.unwrap());
-        
-        return (array_areas, array_neighbour_counts, array_nn_distances);
+        (array_areas, array_neighbour_counts, array_nn_distances)
     }
-    
-    
+
     #[pyfn(m)]
     fn compute_2d_voronoi_areas<'py>(
         py: Python<'py>,
@@ -432,24 +300,13 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         box_size: f64,
         periodic: bool
     ) -> Bound<'py, PyArray1<f64>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-
-        let (areas,_,_) = rust_fn::compute_voronoi_quantities_2d(
-            &array,
-            box_size,
-            box_size,
-            periodic,
-            true,
-            false,
-            false
+        let array = unsafe { points.as_array() };
+        let (areas,_,_) = voronoi::compute_voronoi_quantities_2d(
+            &array, box_size, box_size, periodic, true, false, false
         );
-        let array_areas = PyArray1::from_vec(py, areas.unwrap());
-        
-        return array_areas;
+        PyArray1::from_vec(py, areas.unwrap())
     }
-    
+
     #[pyfn(m)]
     fn compute_2d_voronoi_neighbour_numbers<'py>(
         py: Python<'py>,
@@ -457,24 +314,13 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         box_size: f64,
         periodic: bool
     ) -> Bound<'py, PyArray1<usize>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-
-        let (_,neighbour_counts,_) = rust_fn::compute_voronoi_quantities_2d(
-            &array,
-            box_size,
-            box_size,
-            periodic,
-            false,
-            true,
-            false
+        let array = unsafe { points.as_array() };
+        let (_,neighbour_counts,_) = voronoi::compute_voronoi_quantities_2d(
+            &array, box_size, box_size, periodic, false, true, false
         );
-        let array_neighbour_counts = PyArray1::from_vec(py, neighbour_counts.unwrap());
-        
-        return array_neighbour_counts;
+        PyArray1::from_vec(py, neighbour_counts.unwrap())
     }
-    
+
     #[pyfn(m)]
     fn compute_2d_voronoi_nn_distances<'py>(
         py: Python<'py>,
@@ -482,24 +328,13 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         box_size: f64,
         periodic: bool
     ) -> Bound<'py, PyArray1<f64>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-
-        let (_,_,nn_distances) = rust_fn::compute_voronoi_quantities_2d(
-            &array,
-            box_size,
-            box_size,
-            periodic,
-            false,
-            false,
-            true
+        let array = unsafe { points.as_array() };
+        let (_,_,nn_distances) = voronoi::compute_voronoi_quantities_2d(
+            &array, box_size, box_size, periodic, false, false, true
         );
-        let array_nn_distances = PyArray1::from_vec(py, nn_distances.unwrap());
-        
-        return array_nn_distances;
+        PyArray1::from_vec(py, nn_distances.unwrap())
     }
-    
+
     #[pyfn(m)]
     fn voronoi_furthest_sites<'py>(
         py: Python<'py>,
@@ -507,19 +342,9 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         box_size: f64,
         periodic: bool
     ) -> Bound<'py, PyArray<f64, Dim<[usize; 2]>>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-
-        let furthest_sites = rust_fn::voronoi_furthest_site(
-            &array,
-            box_size,
-            box_size,
-            periodic
-        );
-        let array_furthest_sites = PyArray::from_array(py, &furthest_sites);
-        
-        return array_furthest_sites;
+        let array = unsafe { points.as_array() };
+        let furthest_sites = voronoi::voronoi_furthest_site(&array, box_size, box_size, periodic);
+        PyArray::from_array(py, &furthest_sites)
     }
 
     #[pyfn(m)]
@@ -530,25 +355,14 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         box_size: f64,
         periodic: bool
     ) -> Bound<'py, PyArray1<f64>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-        
+        let array = unsafe { points.as_array() };
         assert!(p>0, "Order for pth-nn distribution needs to be natural integer");
         let ndim = array.shape()[1];
         let box_lengths = vec!(box_size; ndim);
-
-        let pnn_distances = rust_fn::compute_pnn_distances(
-            &array,
-            p,
-            &box_lengths,
-            periodic
-        );
-        let array_pnn_distances = PyArray1::from_vec(py, pnn_distances);
-        
-        return array_pnn_distances;
+        let pnn_distances = neighbors::compute_pnn_distances(&array, p, &box_lengths, periodic);
+        PyArray1::from_vec(py, pnn_distances)
     }
-    
+
     #[pyfn(m)]
     fn compute_pnn_mean_nnbound_distances<'py>(
         py: Python<'py>,
@@ -557,25 +371,14 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         box_size: f64,
         periodic: bool
     ) -> Bound<'py, PyArray1<f64>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-        
+        let array = unsafe { points.as_array() };
         assert!(nn_bound>0, "Order for pth-nn distribution needs to be natural integer");
         let ndim = array.shape()[1];
         let box_lengths = vec!(box_size; ndim);
-
-        let pnn_distances = rust_fn::compute_pnn_mean_nnbound_distances(
-            &array,
-            &box_lengths,
-            nn_bound,
-            periodic
-        );
-        let array_pnn_distances = PyArray1::from_vec(py, pnn_distances);
-        
-        return array_pnn_distances;
+        let pnn_distances = neighbors::compute_pnn_mean_nnbound_distances(&array, &box_lengths, nn_bound, periodic);
+        PyArray1::from_vec(py, pnn_distances)
     }
-        
+
     #[pyfn(m)]
     fn cluster_by_distance<'py>(
         py: Python<'py>,
@@ -584,24 +387,13 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         box_size: f64,
         periodic: bool
     ) -> Bound<'py, PyArray1<usize>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-        
+        let array = unsafe { points.as_array() };
         let ndim = array.shape()[1];
         let box_lengths = vec![box_size; ndim];
-
-        let cluster_id = rust_fn::cluster_by_distance(
-            &array,
-            threshold,
-            &box_lengths,
-            periodic
-        );
-        let cluster_id = PyArray1::from_vec(py, cluster_id);
-        
-        return cluster_id;
+        let cluster_id = neighbors::cluster_by_distance(&array, threshold, &box_lengths, periodic);
+        PyArray1::from_vec(py, cluster_id)
     }
-    
+
     #[pyfn(m)]
     fn point_variances<'py>(
         py: Python<'py>,
@@ -611,19 +403,13 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         n_samples: usize,
         periodic: bool
     ) -> Bound<'py, PyArray1<f64>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { x.as_array() }; // Convert to ndarray type
-        let radii = unsafe { radii.as_array() }; // Convert to ndarray type
-
+        let array = unsafe { x.as_array() };
+        let radii = unsafe { radii.as_array() };
         let ndim = array.shape()[1];
-        
-        // Mutate the data
-        // No need to return any value as the input data is mutated
-        let reduced_variances = rust_fn::point_variances(&array, &radii, &vec![box_size; ndim], n_samples, periodic);
+        let reduced_variances = neighbors::point_variances(&array, &radii, &vec![box_size; ndim], n_samples, periodic);
         reduced_variances.into_pyarray(py)
     }
-    
+
     #[pyfn(m)]
     fn point_variances_2sphere<'py>(
         py: Python<'py>,
@@ -631,14 +417,9 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         radii: Bound<'py, PyArray1<f64>>,
         n_samples: usize,
     ) -> Bound<'py, PyArray1<f64>> {
-        // First we convert the Python numpy array into Rust ndarray
-        // Here, you can specify different array sizes and types.
-        let array = unsafe { x.as_array() }; // Convert to ndarray type
-        let radii = unsafe { radii.as_array() }; // Convert to ndarray type
-        
-        // Mutate the data
-        // No need to return any value as the input data is mutated
-        let reduced_variances = rust_fn::point_variances_2sphere(&array, &radii,  n_samples);
+        let array = unsafe { x.as_array() };
+        let radii = unsafe { radii.as_array() };
+        let reduced_variances = neighbors::point_variances_2sphere(&array, &radii, n_samples);
         reduced_variances.into_pyarray(py)
     }
 
@@ -651,22 +432,14 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         box_size: f64,
         periodic: bool
     ) -> Bound<'py, PyArray1<usize>> {
-        
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-        let radii_array = unsafe { radii.as_array() }; // Same for radii
-        
-        let neighbor_counts = rust_fn::count_metric_neighbors(
-            &array,
-            &radii_array,
-            threshold,
-            &vec![box_size; 2],
-            periodic
+        let array = unsafe { points.as_array() };
+        let radii_array = unsafe { radii.as_array() };
+        let neighbor_counts = neighbors::count_metric_neighbors(
+            &array, &radii_array, threshold, &vec![box_size; 2], periodic
         );
-        let neighbor_counts = PyArray1::from_vec(py, neighbor_counts);
-        
-        return neighbor_counts;
+        PyArray1::from_vec(py, neighbor_counts)
     }
-    
+
     #[pyfn(m)]
     fn monodisperse_metric_neighbors<'py>(
         py: Python<'py>,
@@ -676,25 +449,16 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         box_size: f64,
         periodic: bool
     ) -> Bound<'py, PyArray1<usize>> {
-        
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
+        let array = unsafe { points.as_array() };
         let n_particles = array.shape()[0];
         let radii_array_owned = Array::from_elem(n_particles, radius);
         let radii_array = radii_array_owned.view();
-        
-        let neighbor_counts = rust_fn::count_metric_neighbors(
-            &array,
-            &radii_array,
-            threshold,
-            &vec![box_size; 2],
-            periodic
+        let neighbor_counts = neighbors::count_metric_neighbors(
+            &array, &radii_array, threshold, &vec![box_size; 2], periodic
         );
-        let neighbor_counts = PyArray1::from_vec(py, neighbor_counts);
-        
-        return neighbor_counts;
+        PyArray1::from_vec(py, neighbor_counts)
     }
-    
-    
+
     #[pyfn(m)]
     fn metric_neighbors_2sphere<'py>(
         py: Python<'py>,
@@ -702,20 +466,12 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         radii: &Bound<'py, PyArray1<f64>>,
         threshold: f64
     ) -> Bound<'py, PyArray1<usize>> {
-        
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
-        let radii_array = unsafe { radii.as_array() }; // Same for radii
-        
-        let neighbor_counts = rust_fn::count_metric_neighbors_2sphere(
-            &array,
-            &radii_array,
-            threshold
-        );
-        let neighbor_counts = PyArray1::from_vec(py, neighbor_counts);
-        
-        return neighbor_counts;
+        let array = unsafe { points.as_array() };
+        let radii_array = unsafe { radii.as_array() };
+        let neighbor_counts = neighbors::count_metric_neighbors_2sphere(&array, &radii_array, threshold);
+        PyArray1::from_vec(py, neighbor_counts)
     }
-    
+
     #[pyfn(m)]
     fn monodisperse_metric_neighbors_2sphere<'py>(
         py: Python<'py>,
@@ -723,2538 +479,13 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         radius: f64,
         threshold: f64
     ) -> Bound<'py, PyArray1<usize>> {
-        
-        let array = unsafe { points.as_array() }; // Convert to ndarray type
+        let array = unsafe { points.as_array() };
         let n_particles = array.shape()[0];
         let radii_array_owned = Array::from_elem(n_particles, radius);
         let radii_array = radii_array_owned.view();
-        
-        let neighbor_counts = rust_fn::count_metric_neighbors_2sphere(
-            &array,
-            &radii_array,
-            threshold
-        );
-        let neighbor_counts = PyArray1::from_vec(py, neighbor_counts);
-        
-        return neighbor_counts;
+        let neighbor_counts = neighbors::count_metric_neighbors_2sphere(&array, &radii_array, threshold);
+        PyArray1::from_vec(py, neighbor_counts)
     }
-    
+
     Ok(())
-}
-
-// The rust side functions
-// Put it in mod to separate it from the python bindings
-// XXX This part can/should be broken down into separate mods in rs files eventually
-mod rust_fn {
-    use ang::atan2;
-    use libm::hypot;
-    use ndarray::parallel::prelude::*;
-    use ndarray::{s, Array, Axis, Dim, ShapeBuilder, Zip};
-    use numpy::ndarray::{ArrayView1,ArrayViewD};
-    use rayon::iter::ParallelBridge;
-    use std::f64::consts::PI;
-    use std::f64::INFINITY;
-    use std::fmt::{Display, Formatter, Result};
-    use std::sync::{Arc, RwLock};
-    extern crate spade;
-    use spade::internals::FixedHandleImpl;
-    use spade::{DelaunayTriangulation, Point2, Triangulation, HasPosition};
-
-    extern crate geo;
-    use geo::algorithm::area::Area;
-    use geo::{LineString, Polygon};
-    
-    use rand::RngExt;
-    use rstar::{RTree, primitives::GeomWithData};
-
-    // Vectors of RwLocks cannot be initialized with a clone!
-    macro_rules! vec_no_clone {
-        ( $val:expr; $n:expr ) => {{
-            let result: Vec<_> = std::iter::repeat_with(|| $val).take($n).collect();
-            result
-        }};
-    }
-
-    pub fn compute_vector_rdf_2d(
-        points: &ArrayViewD<'_, f64>,
-        box_size_x: f64,
-        box_size_y: f64,
-        binsize: f64,
-        periodic: bool,
-    ) -> Array<f64, Dim<[usize; 2]>> {
-        // Check that the binsize is physical
-        assert!(
-            binsize > 0.0,
-            "Something is wrong with the binsize used for the RDF"
-        );
-
-        let nbins = if periodic {
-            (box_size_x / binsize).ceil() as usize
-        } else {
-            2 * (box_size_x / binsize).ceil() as usize
-        };
-        
-        let bc_shift_factor = if periodic { 1.0 } else { 2.0 };
-        
-        let box_lengths = vec![box_size_x, box_size_y];
-
-        let n_particles = points.shape()[0];
-        let rdf: Vec<Vec<Arc<RwLock<f64>>>> =
-            vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; nbins];
-
-        (0..n_particles).into_par_iter().for_each(|i| {
-            for j in i + 1..n_particles {
-                let xi = points[[i, 0]];
-                let xj = points[[j, 0]];
-                let yi = points[[i, 1]];
-                let yj = points[[j, 1]];
-
-                let mut r_ij = vec![xj - xi, yj - yi];
-                if periodic {
-                    ensure_periodicity(&mut r_ij, &box_lengths);
-                }
-
-                // determine the relevant bin, and update the count at that bin
-                let index_x = ((r_ij[0] + bc_shift_factor * 0.5 * box_size_x) / binsize).floor() as usize;
-                let index_y = ((r_ij[1] + bc_shift_factor * 0.5 * box_size_y) / binsize).floor() as usize;
-                *(rdf[index_x][index_y].write().unwrap()) += 1.0;
-
-                // Use symmetry
-                let index_x_symm = ((bc_shift_factor * 0.5 * box_size_x - r_ij[0]) / binsize).floor() as usize;
-                let index_y_symm = ((bc_shift_factor * 0.5 * box_size_y - r_ij[1]) / binsize).floor() as usize;
-                *(rdf[index_x_symm][index_y_symm].write().unwrap()) += 1.0;
-            }
-        });
-        
-        let mut rdf_vector = Array::<f64, _>::zeros((nbins, nbins).f());
-        Zip::indexed(&mut rdf_vector).par_for_each(|(i, j), rdf_val| {
-            *rdf_val = *rdf
-            .get(i)
-            .unwrap()
-            .get(j)
-            .unwrap()
-            .read()
-            .unwrap();
-        });
-
-        return rdf_vector;
-    }
-    
-    
-    pub fn compute_bounded_vector_rdf_2d(
-        points: &ArrayViewD<'_, f64>,
-        box_size_x: f64,
-        box_size_y: f64,
-        binsize: f64,
-        radial_bound: f64,
-        periodic: bool,
-    ) -> Array<f64, Dim<[usize; 2]>> {
-        // Check that the binsize is physical
-        assert!(
-            binsize > 0.0,
-            "Something is wrong with the binsize used for the RDF"
-        );
-
-        let nbins = (2.0 * radial_bound / binsize).ceil() as usize;
-        let box_lengths = vec![box_size_x, box_size_y];
-
-        let n_particles = points.shape()[0];
-        let rdf: Vec<Vec<Arc<RwLock<f64>>>> =
-            vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; nbins];
-            
-        // Construct an rtree here
-        let rtree_positions = compute_periodic_rstar_tree(&points, box_lengths[0], box_lengths[1], periodic);
-
-        (0..n_particles).into_par_iter().for_each(|current_index| {
-            
-            let mut neighbor_with_distance_2_iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&[points[[current_index,0]], points[[current_index,1]]]).skip(1);
-            let mut still_within_bounds = true;
-            while still_within_bounds {
-                let (neighbor, dist2) = neighbor_with_distance_2_iter.next().unwrap();
-                if dist2 > radial_bound.powi(2) {
-                    still_within_bounds = false;
-                } else {
-                    let mut r_ij = vec![neighbor[0] - points[[current_index,0]], neighbor[1] - points[[current_index,1]]];
-                    if periodic {
-                        ensure_periodicity(&mut r_ij, &box_lengths);
-                    }
-                    
-                    // determine the relevant bin, and update the count at that bin
-                    let index_x = ((r_ij[0] + radial_bound) / binsize).floor() as usize;
-                    let index_y = ((r_ij[1] + radial_bound) / binsize).floor() as usize;
-                    *(rdf[index_x][index_y].write().unwrap()) += 1.0;
-                    
-                }
-            }
-        });
-        
-        let mut rdf_vector = Array::<f64, _>::zeros((nbins, nbins).f());
-        Zip::indexed(&mut rdf_vector).par_for_each(|(i, j), rdf_val| {
-            *rdf_val = *rdf
-            .get(i)
-            .unwrap()
-            .get(j)
-            .unwrap()
-            .read()
-            .unwrap();
-        });
-
-        return rdf_vector;
-    }
-    
-    pub fn compute_nnbounded_vector_rdf_2d(
-        points: &ArrayViewD<'_, f64>,
-        box_size_x: f64,
-        box_size_y: f64,
-        binsize: f64,
-        nn_bound: usize,
-        periodic: bool,
-    ) -> Array<f64, Dim<[usize; 2]>> {
-        // Check that the binsize is physical
-        assert!(
-            binsize > 0.0,
-            "Something is wrong with the binsize used for the RDF"
-        );
-
-        let n_particles = points.shape()[0];
-        // let inter_spacing = (box_size_x * box_size_y / n_particles as f64).sqrt();
-        // let radial_bound = (nn_bound as f64).sqrt() * inter_spacing * 2.0;
-        
-        let radial_bound = if periodic {
-            hypot(box_size_x / 2.0, box_size_y / 2.0)
-        } else {
-            hypot(box_size_x, box_size_y)
-        };
-        
-        let nbins = (2.0 * radial_bound / binsize).ceil() as usize;
-        let box_lengths = vec![box_size_x, box_size_y];
-
-        let rdf: Vec<Vec<Arc<RwLock<f64>>>> =
-            vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; nbins];
-            
-        // Construct an rtree here
-        let rtree_positions = compute_periodic_rstar_tree(&points, box_lengths[0], box_lengths[1], periodic);
-
-        (0..n_particles).into_par_iter().for_each(|current_index| {
-            
-            let mut neighbor_iter = rtree_positions.nearest_neighbor_iter(&[points[[current_index,0]], points[[current_index,1]]]).skip(1);
-            let mut counter = 0;
-            while counter < nn_bound {
-                let neighbor = neighbor_iter.next().unwrap();
-
-                let mut r_ij = vec![neighbor[0] - points[[current_index,0]], neighbor[1] - points[[current_index,1]]];
-                if periodic {
-                    ensure_periodicity(&mut r_ij, &box_lengths);
-                }
-                
-                // determine the relevant bin, and update the count at that bin
-                let index_x = ((r_ij[0] + radial_bound) / binsize).floor() as usize;
-                let index_y = ((r_ij[1] + radial_bound) / binsize).floor() as usize;
-                *(rdf[index_x][index_y].write().unwrap()) += 1.0;
-                
-                counter += 1;
-            }
-        });
-        
-        let mut rdf_vector = Array::<f64, _>::zeros((nbins, nbins).f());
-        Zip::indexed(&mut rdf_vector).par_for_each(|(i, j), rdf_val| {
-            *rdf_val = *rdf
-            .get(i)
-            .unwrap()
-            .get(j)
-            .unwrap()
-            .read()
-            .unwrap();
-        });
-
-        return rdf_vector;
-    }
-
-    pub fn compute_pnn_vector_rdf_2d(
-        points: &ArrayViewD<'_, f64>,
-        box_size_x: f64,
-        box_size_y: f64,
-        binsize: f64,
-        nn_order: usize,
-        periodic: bool,
-    ) -> Array<f64, Dim<[usize; 2]>> {
-        // Check that the binsize is physical
-        assert!(
-            binsize > 0.0,
-            "Something is wrong with the binsize used for the RDF"
-        );
-
-        let n_particles = points.shape()[0];
-        // let inter_spacing = (box_size_x * box_size_y / n_particles as f64).sqrt();
-        // let radial_bound = (nn_order as f64).sqrt() * inter_spacing * 2.0;
-        
-        let radial_bound = if periodic {
-            hypot(box_size_x / 2.0, box_size_y / 2.0)
-        } else {
-            hypot(box_size_x, box_size_y)
-        };
-        
-        let nbins = (2.0 * radial_bound / binsize).ceil() as usize;
-        let box_lengths = vec![box_size_x, box_size_y];
-
-        let rdf: Vec<Vec<Arc<RwLock<f64>>>> =
-            vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; nbins];
-            
-        // Construct an rtree here
-        let rtree_positions = compute_periodic_rstar_tree(&points, box_lengths[0], box_lengths[1], periodic);
-
-        (0..n_particles).into_par_iter().for_each(|current_index| {
-            
-            let mut neighbor_iter = rtree_positions.nearest_neighbor_iter(&[points[[current_index,0]], points[[current_index,1]]]).skip(nn_order);
-
-            let neighbor = neighbor_iter.next().unwrap();
-            let mut r_ij = vec![neighbor[0] - points[[current_index,0]], neighbor[1] - points[[current_index,1]]];
-            if periodic {
-                ensure_periodicity(&mut r_ij, &box_lengths);
-            }
-            
-            // determine the relevant bin, and update the count at that bin
-            let index_x = ((r_ij[0] + radial_bound) / binsize).floor() as usize;
-            let index_y = ((r_ij[1] + radial_bound) / binsize).floor() as usize;
-            
-            assert!(index_x < nbins);
-            assert!(index_y < nbins);
-            
-            *(rdf[index_x][index_y].write().unwrap()) += 1.0;
-                
-        });
-        
-        let mut rdf_vector = Array::<f64, _>::zeros((nbins, nbins).f());
-        Zip::indexed(&mut rdf_vector).par_for_each(|(i, j), rdf_val| {
-            *rdf_val = *rdf
-            .get(i)
-            .unwrap()
-            .get(j)
-            .unwrap()
-            .read()
-            .unwrap();
-        });
-
-        return rdf_vector;
-    }
-    
-    pub fn compute_vector_gyromorphic_corr_2d(
-        points: &ArrayViewD<'_, f64>,
-        box_size: f64,
-        binsize: f64,
-        periodic: bool,
-        order: u64,
-    ) -> (Array<f64, Dim<[usize; 2]>>, Array<f64, Dim<[usize; 3]>>) {
-        let npoints = points.shape()[0];
-        let ndim = points.shape()[1];
-        assert!(npoints > 1);
-        assert!(ndim == 2);
-
-        // Compute the correlations
-        let (rdf, corr) = compute_particle_gyromorphic_correlations(
-            &points, box_size, box_size, binsize, periodic, order,
-        );
-
-        return (rdf, corr);
-    }
-
-    pub fn compute_particle_gyromorphic_correlations(
-        points: &ArrayViewD<'_, f64>,
-        box_size_x: f64,
-        box_size_y: f64,
-        binsize: f64,
-        periodic: bool,
-        order: u64,
-    ) -> (Array<f64, Dim<[usize; 2]>>, Array<f64, Dim<[usize; 3]>>) {
-        // Check that the binsize is physical
-        assert!(
-            binsize > 0.0,
-            "Something is wrong with the binsize used for the RDF"
-        );
-
-        let nbins = if periodic {
-            (box_size_x / binsize).ceil() as usize
-        } else {
-            2 * (box_size_x / binsize).ceil() as usize
-        };
-        
-        let bc_shift_factor = if periodic { 1.0 } else { 2.0 };
-        
-        let box_lengths = vec![box_size_x, box_size_y];
-
-        let n_particles = points.shape()[0];
-        let rdf: Vec<Vec<Arc<RwLock<f64>>>> =
-            vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; nbins];
-        let corr: Vec<Vec<Vec<Arc<RwLock<f64>>>>> = vec_no_clone![vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); 2]; nbins]; nbins];
-
-        (0..n_particles).into_par_iter().for_each(|i| {
-            for j in i + 1..n_particles {
-                let xi = points[[i, 0]];
-                let xj = points[[j, 0]];
-                let yi = points[[i, 1]];
-                let yj = points[[j, 1]];
-
-                let mut r_ij = vec![xj - xi, yj - yi];
-                if periodic {
-                    ensure_periodicity(&mut r_ij, &box_lengths);
-                }
-
-                // determine the relevant bin, and update the count at that bin
-                let index_x = ((r_ij[0] + bc_shift_factor * 0.5 * box_size_x) / binsize).floor() as usize;
-                let index_y = ((r_ij[1] + bc_shift_factor * 0.5 * box_size_y) / binsize).floor() as usize;
-                *(rdf[index_x][index_y].write().unwrap()) += 1.0;
-
-                // Compute the orientational part
-                let theta_ij = atan2(r_ij[1], r_ij[0]);
-                let angle = order as f64 * theta_ij;
-                let dpsinx = angle.cos();
-                let dpsiny = angle.sin();
-
-                *(corr[index_x][index_y][0].write().unwrap()) += dpsinx;
-                *(corr[index_x][index_y][1].write().unwrap()) += dpsiny;
-
-                // Use symmetry
-                let index_x_symm = ((bc_shift_factor * 0.5 * box_size_x - r_ij[0]) / binsize).floor() as usize;
-                let index_y_symm = ((bc_shift_factor * 0.5 * box_size_y - r_ij[1]) / binsize).floor() as usize;
-                *(rdf[index_x_symm][index_y_symm].write().unwrap()) += 1.0;
-
-                *(corr[index_x_symm][index_y_symm][0].write().unwrap()) += dpsinx;
-                *(corr[index_x_symm][index_y_symm][1].write().unwrap()) += dpsiny;
-            }
-        });
-
-        let mut rdf_vector = Array::<f64, _>::zeros((nbins, nbins).f());
-        let mut corr_vector = Array::<f64, _>::zeros((nbins, nbins, 2).f());
-        
-        Zip::indexed(&mut rdf_vector).par_for_each(|(i, j), rdf_val| {
-            *rdf_val = *rdf
-            .get(i)
-            .unwrap()
-            .get(j)
-            .unwrap()
-            .read()
-            .unwrap();
-        });
-        
-        // https://docs.rs/ndarray/latest/ndarray/struct.Zip.html
-        // https://stackoverflow.com/questions/75824934/parallel-computation-of-values-for-ndarray-array2f64-in-rust
-        Zip::indexed(&mut corr_vector).par_for_each(|(i, j, dim), corr_val| {
-            *corr_val = *corr
-            .get(i)
-            .unwrap()
-            .get(j)
-            .unwrap()
-            .get(dim)
-            .unwrap()
-            .read()
-            .unwrap();
-        });
-        
-        return (rdf_vector, corr_vector);
-    }
-
-    pub fn compute_vector_rdf_3d(
-        points: &ArrayViewD<'_, f64>,
-        box_size_x: f64,
-        box_size_y: f64,
-        box_size_z: f64,
-        binsize: f64,
-        periodic: bool,
-    ) -> Array<f64, Dim<[usize; 3]>> {
-        // Check that the binsize is physical
-        assert!(
-            binsize > 0.0,
-            "Something is wrong with the binsize used for the RDF"
-        );
-
-        let nbins = if periodic {
-            (box_size_x / binsize).ceil() as usize
-        } else {
-            2 * (box_size_x / binsize).ceil() as usize
-        };
-        
-        let bc_shift_factor = if periodic { 1.0 } else { 2.0 };
-        
-        let box_lengths = vec![box_size_x, box_size_y, box_size_z];
-
-        let n_particles = points.shape()[0];
-        let rdf: Vec<Vec<Vec<Arc<RwLock<f64>>>>> = vec_no_clone![vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; nbins]; nbins];
-
-        (0..n_particles).into_par_iter().for_each(|i| {
-            for j in i + 1..n_particles {
-                let xi = points[[i, 0]];
-                let xj = points[[j, 0]];
-                let yi = points[[i, 1]];
-                let yj = points[[j, 1]];
-                let zi = points[[i, 2]];
-                let zj = points[[j, 2]];
-
-                let mut r_ij = vec![xj - xi, yj - yi, zj - zi];
-                if periodic {
-                    ensure_periodicity(&mut r_ij, &box_lengths);
-                }
-                
-                // determine the relevant bin, and update the count at that bin
-                let index_x = ((r_ij[0] + bc_shift_factor * 0.5 * box_size_x) / binsize).floor() as usize;
-                let index_y = ((r_ij[1] + bc_shift_factor * 0.5 * box_size_y) / binsize).floor() as usize;
-                let index_z = ((r_ij[2] + bc_shift_factor * 0.5 * box_size_z) / binsize).floor() as usize;
-                *(rdf[index_x][index_y][index_z].write().unwrap()) += 1.0;
-
-                // Use symmetry
-                let index_x_symm = ((bc_shift_factor * 0.5 * box_size_x - r_ij[0]) / binsize).floor() as usize;
-                let index_y_symm = ((bc_shift_factor * 0.5 * box_size_y - r_ij[1]) / binsize).floor() as usize;
-                let index_z_symm = ((bc_shift_factor * 0.5 * box_size_z - r_ij[2]) / binsize).floor() as usize;
-                *(rdf[index_x_symm][index_y_symm][index_z_symm]
-                    .write()
-                    .unwrap()) += 1.0;
-            }
-        });
-        
-        // Could make this an array and actually parallelize over all dimensions
-        let mut rdf_vector = Array::<f64, _>::zeros((nbins, nbins, nbins).f());
-        Zip::indexed(&mut rdf_vector).par_for_each(|(i, j, k), rdf_val| {
-            *rdf_val = *rdf
-            .get(i)
-            .unwrap()
-            .get(j)
-            .unwrap()
-            .get(k)
-            .unwrap()
-            .read()
-            .unwrap();
-        });
-
-        return rdf_vector;
-    }
-    
-    pub fn compute_bounded_vector_rdf_3d(
-        points: &ArrayViewD<'_, f64>,
-        box_size_x: f64,
-        box_size_y: f64,
-        box_size_z: f64,
-        binsize: f64,
-        radial_bound: f64,
-        periodic: bool,
-    ) -> Array<f64, Dim<[usize; 3]>> {
-        // Check that the binsize is physical
-        assert!(
-            binsize > 0.0,
-            "Something is wrong with the binsize used for the RDF"
-        );
-
-        let nbins = (2.0 * radial_bound / binsize).ceil() as usize;
-        let box_lengths = vec![box_size_x, box_size_y, box_size_z];
-        
-        let n_particles = points.shape()[0];
-        let rdf: Vec<Vec<Vec<Arc<RwLock<f64>>>>> = vec_no_clone![vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; nbins]; nbins];
-            
-        // Construct an rtree here
-        let rtree_positions = compute_periodic_rstar_tree_3d(&points, box_lengths[0], box_lengths[1], box_lengths[2], periodic);
-
-        (0..n_particles).into_par_iter().for_each(|current_index| {
-            
-            let mut neighbor_with_distance_2_iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&[points[[current_index,0]], points[[current_index,1]], points[[current_index, 2]]]).skip(1);
-            let mut still_within_bounds = true;
-            while still_within_bounds {
-                let (neighbor, dist2) = neighbor_with_distance_2_iter.next().unwrap();
-                if dist2 > radial_bound.powi(2) {
-                    still_within_bounds = false;
-                } else {
-                    let mut r_ij = vec![neighbor[0] - points[[current_index,0]], neighbor[1] - points[[current_index,1]], neighbor[2] - points[[current_index, 2]]];
-                    if periodic {
-                        ensure_periodicity(&mut r_ij, &box_lengths);
-                    }
-                    
-                    // determine the relevant bin, and update the count at that bin
-                    let index_x = ((r_ij[0] + radial_bound) / binsize).floor() as usize;
-                    let index_y = ((r_ij[1] + radial_bound) / binsize).floor() as usize;
-                    let index_z: usize = ((r_ij[2] + radial_bound) / binsize).floor() as usize;
-                    *(rdf[index_x][index_y][index_z].write().unwrap()) += 1.0;
-                    
-                }
-            }
-        });
-
-        
-        // Could make this an array and actually parallelize over all dimensions
-        let mut rdf_vector = Array::<f64, _>::zeros((nbins, nbins, nbins).f());
-        Zip::indexed(&mut rdf_vector).par_for_each(|(i, j, k), rdf_val| {
-            *rdf_val = *rdf
-            .get(i)
-            .unwrap()
-            .get(j)
-            .unwrap()
-            .get(k)
-            .unwrap()
-            .read()
-            .unwrap();
-        });
-
-        return rdf_vector;
-    }
-
-    pub fn compute_nnbounded_vector_rdf_3d(
-        points: &ArrayViewD<'_, f64>,
-        box_size_x: f64,
-        box_size_y: f64,
-        box_size_z: f64,
-        binsize: f64,
-        nn_bound: usize,
-        periodic: bool,
-    ) -> Array<f64, Dim<[usize; 3]>> {
-        // Check that the binsize is physical
-        assert!(
-            binsize > 0.0,
-            "Something is wrong with the binsize used for the RDF"
-        );
-
-        // let n_particles = points.shape()[0];
-        // let inter_spacing = (box_size_x * box_size_y * box_size_z / n_particles as f64).cbrt();
-        // let radial_bound = (nn_bound as f64).cbrt() * inter_spacing * 2.0;
-        
-        let radial_bound = if periodic {
-            hypot(hypot(box_size_x / 2.0, box_size_y / 2.0), box_size_z / 2.0)
-        } else {
-            hypot(hypot(box_size_x, box_size_y),box_size_z)
-        };
-        
-        let nbins = (2.0 * radial_bound / binsize).ceil() as usize;
-        let box_lengths = vec![box_size_x, box_size_y, box_size_z];
-        
-        let n_particles = points.shape()[0];
-        let rdf: Vec<Vec<Vec<Arc<RwLock<f64>>>>> = vec_no_clone![vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; nbins]; nbins];
-            
-        // Construct an rtree here
-        let rtree_positions = compute_periodic_rstar_tree_3d(&points, box_lengths[0], box_lengths[1], box_lengths[2], periodic);
-
-        (0..n_particles).into_par_iter().for_each(|current_index| {
-            
-            let mut neighbor_iter = rtree_positions.nearest_neighbor_iter(&[points[[current_index,0]], points[[current_index,1]], points[[current_index, 2]]]).skip(1);
-            let mut counter = 0;
-            while counter < nn_bound {
-                let neighbor = neighbor_iter.next().unwrap();
-
-                let mut r_ij = vec![neighbor[0] - points[[current_index,0]], neighbor[1] - points[[current_index,1]], neighbor[2] - points[[current_index, 2]]];
-                if periodic {
-                    ensure_periodicity(&mut r_ij, &box_lengths);
-                }
-                
-                // determine the relevant bin, and update the count at that bin
-                let index_x = ((r_ij[0] + radial_bound) / binsize).floor() as usize;
-                let index_y = ((r_ij[1] + radial_bound) / binsize).floor() as usize;
-                let index_z: usize = ((r_ij[2] + radial_bound) / binsize).floor() as usize;
-                *(rdf[index_x][index_y][index_z].write().unwrap()) += 1.0;
-                
-                counter += 1;
-                
-            
-            }
-        });
-
-        
-        // Could make this an array and actually parallelize over all dimensions
-        let mut rdf_vector = Array::<f64, _>::zeros((nbins, nbins, nbins).f());
-        Zip::indexed(&mut rdf_vector).par_for_each(|(i, j, k), rdf_val| {
-            *rdf_val = *rdf
-            .get(i)
-            .unwrap()
-            .get(j)
-            .unwrap()
-            .get(k)
-            .unwrap()
-            .read()
-            .unwrap();
-        });
-
-        return rdf_vector;
-    }
-
-
-    pub fn compute_vector_rdf_2sphere(
-        points: &ArrayViewD<'_, f64>,
-        binsize: f64,
-    ) -> Array<f64, Dim<[usize; 2]>> {
-        // Check that the binsize is physical
-        assert!(
-            binsize > 0.0,
-            "Something is wrong with the binsize used for the RDF"
-        );
-
-        let nbins_theta = (PI / binsize).ceil() as usize;
-        let nbins_phi = (2.0 * PI / binsize).ceil() as usize;
-
-        let n_particles = points.shape()[0];
-        let rdf: Vec<Vec<Arc<RwLock<f64>>>> =
-            vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins_phi]; nbins_theta];
-
-        (0..n_particles).into_par_iter().for_each(|i| {
-            for j in 0..n_particles {
-                let thetai = points[[i, 0]];
-                let thetaj = points[[j, 0]];
-                let phii = points[[i, 1]];
-                let phij = points[[j, 1]];
-                
-                let (dist_theta, dist_phi) = relative_distance_vec_spherical(thetai,phii, thetaj, phij);
-                
-                // determine the relevant bin, and update the count at that bin
-                let index_x = (dist_theta / binsize).floor() as usize;
-                let index_y = (dist_phi / binsize).floor() as usize;
-                *(rdf[index_x][index_y].write().unwrap()) += 1.0;
-            }
-        });
-        
-        let mut rdf_vector = Array::<f64, _>::zeros((nbins_theta, nbins_phi).f());
-        Zip::indexed(&mut rdf_vector).par_for_each(|(i, j), rdf_val| {
-            *rdf_val = *rdf
-            .get(i)
-            .unwrap()
-            .get(j)
-            .unwrap()
-            .read()
-            .unwrap();
-        });
-
-        return rdf_vector;
-    }
-    
-    pub fn relative_distance_vec_spherical(thetaref: f64, phiref: f64, theta: f64, phi: f64) -> (f64, f64) {
-        
-        // I think it's necessary to go through Cartesian for this unfortunately
-        let r = vec![theta.sin() * phi.cos(),theta.sin() * phi.sin(),theta.cos()];
-        
-        // Rotate by -phiref around z first
-        let r_rotated_once = vec![r[0]*phiref.cos() + r[1] * phiref.sin(), - r[0] * phiref.sin() + r[1] * phiref.cos(), r[2] ];
-        
-        // Rotate by +thetaref around y then
-        let r_rotated_twice = vec![r_rotated_once[0]*thetaref.cos() - r_rotated_once[2] * thetaref.sin(),r_rotated_once[1],r_rotated_once[0]*thetaref.sin() + r_rotated_once[2] * thetaref.cos()];
-        
-        // Measure the spherical angles of the newly obtained vector
-        let theta_relative = r_rotated_twice[2].acos();
-        let phi_relative = atan2(r_rotated_twice[1], r_rotated_twice[0]).in_radians() + PI;
-        
-        (theta_relative, phi_relative)
-        
-    }
-    
-    pub fn ensure_periodicity(v: &mut Vec<f64>, box_lengths: &Vec<f64>) {
-        
-        v.iter_mut().zip(box_lengths).for_each(|(coord, box_length)| { 
-            
-            if *coord > box_length * 0.5 {
-                *coord -= box_length;
-            } else if *coord <= -box_length * 0.5 {
-                *coord += box_length;
-            }
-            
-        });
-    }
-
-    pub fn rdf_normalisation(box_lengths: &Vec<f64>, npoints: usize, bincenter: f64, binsize: f64, periodic: bool) -> f64 {
-        
-        let ndim = box_lengths.len();
-        let volume: f64 = box_lengths.iter().product();
-        let rho = npoints as f64 / volume;
-        
-        assert!(ndim > 1);
-        assert!(ndim < 4);
-        
-        if ndim == 2 {
-            
-            let normalisation = if periodic {
-                if bincenter <= box_lengths[0] / 2.0 {
-                    2.0 * PI * bincenter * binsize * rho
-                // (2 pi r  rho dr)
-                } else {
-                    binsize * rho
-                        * 2.0
-                        * bincenter
-                        * (PI - 4.0 * (0.5 * box_lengths[0] / bincenter).acos())
-                    // rho dr * 2 r *( pi - 4 acos(L/2r))
-                }
-            } else {
-                2.0 * PI * bincenter * binsize * rho
-                // (2 pi r  rho dr)
-            };
-            
-            return normalisation;
-            
-        } else {
-            
-            let normalisation = if periodic {
-                if bincenter <= box_lengths[0] / 2.0 {
-                    4.0 * PI * bincenter * bincenter * binsize * rho
-                    // (4 pi r^2  rho dr)
-                } else if bincenter <= box_lengths[0] / (2.0_f64.sqrt()) {
-                    binsize * rho 
-                        * 2.0
-                        * bincenter
-                        * PI
-                        * (3.0 * box_lengths[0] - 4.0 * bincenter)
-                    // rho dr * 2 r * pi * ( 3 L - 4 r)
-                } else {
-                    binsize * rho
-                        * 2.0
-                        * bincenter
-                        * (3.0 * PI * box_lengths[0] - 4.0 * PI * bincenter
-                            + 12.0
-                                * bincenter
-                                * (1.0
-                                    / (4.0 * bincenter * bincenter
-                                        / (box_lengths[0] * box_lengths[0])
-                                        - 1.0))
-                                    .acos()
-                            - 12.0
-                                * box_lengths[0]
-                                * (1.0
-                                    / (4.0 * bincenter * bincenter
-                                        / (box_lengths[0] * box_lengths[0])
-                                        - 1.0)
-                                        .sqrt())
-                                .acos())
-                    // rho dr * 2 r * ( 3 pi l - 4 pi r + 12 r acos(1/(1-4 r^2 / L^2)) - 12 L acos(1/sqrt(4r^2/L^2 -1)) )
-                }
-            } else {
-                4.0 * PI * bincenter * bincenter * binsize * rho
-                // (4 pi r^2  rho dr)
-            };
-            
-            return normalisation;
-            
-        }
-        
-    }
-    
-    pub fn compute_radial_correlations_2d(
-        points: &ArrayViewD<'_, f64>,
-        fields: &ArrayViewD<'_, f64>,
-        box_size_x: f64,
-        box_size_y: f64,
-        binsize: f64,
-        periodic: bool,
-        connected: bool,
-    ) -> (Vec<f64>, Array<f64, Dim<[usize; 2]>>) {
-        // Check that the binsize is physical
-        assert!(
-            binsize > 0.0,
-            "Something is wrong with the binsize used for the RDF"
-        );
-        
-        let box_lengths = vec![box_size_x, box_size_y];
-
-        // get the needed parameters from the input
-        let n_particles = points.shape()[0];
-        let field_dim = fields.shape()[1];
-        let max_dist = if periodic {
-            hypot(box_size_x / 2.0, box_size_y / 2.0)
-        } else {
-            hypot(box_size_x, box_size_y)
-        };
-        let nbins = (max_dist / binsize).ceil() as usize;
-        let rdf: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
-        let field_corrs: Vec<Vec<Arc<RwLock<f64>>>> =
-            vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); field_dim]; nbins];
-
-        // compute the mean values of the quantities used in correlations
-        let mut mean_field: Vec<f64> = vec_no_clone![0.0; field_dim];
-        for dim in 0..field_dim {
-            mean_field[dim] = fields.slice(s![.., dim]).into_par_iter().sum();
-        }
-
-        for dim in 0..field_dim {
-            mean_field[dim] /= n_particles as f64;
-        }
-
-        // go through all pairs just once for all correlations and compute both rdf and the correlation
-        let counts: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
-        (0..n_particles).into_par_iter().for_each(|i| {
-            for j in i + 1..n_particles {
-                let xi = points[[i, 0]];
-                let xj = points[[j, 0]];
-                let yi = points[[i, 1]];
-                let yj = points[[j, 1]];
-
-                let mut r_ij = vec![xj - xi, yj - yi];
-                if periodic {
-                    ensure_periodicity(&mut r_ij, &box_lengths);
-                }
-                let dist_ij = hypot(r_ij[0], r_ij[1]);
-                assert!(
-                    dist_ij >= 0.0 && dist_ij < max_dist,
-                    "Something is wrong with the distance between particles!\nDistance: {:?}",
-                    dist_ij
-                );
-
-                // determine the relevant bin, and update the count at that bin for g(r)
-                let index = (dist_ij / binsize).floor() as usize;
-                *(counts[index].write().unwrap()) += 1.0;
-
-                // Also compute the field correlation
-                for k in 0..field_dim {
-                    if connected {
-                        *(field_corrs[index][k].write().unwrap()) +=
-                            (fields[[i, k]] - mean_field[k]) * (fields[[j, k]] - mean_field[k]);
-                    } else {
-                        *(field_corrs[index][k].write().unwrap()) +=
-                            fields[[i, k]] * fields[[j, k]];
-                    }
-                }
-            }
-        });
-
-        (0..nbins).into_par_iter().for_each(|bin| {
-            // normalise the values of the correlations by counts
-            let current_count = *counts[bin].read().unwrap();
-            if current_count != 0.0 {
-                for k in 0..field_dim {
-                    *(field_corrs[bin][k].write().unwrap()) /= current_count;
-                }
-
-                // THEN only, compute the rdf from counts
-                let bincenter = (bin as f64 + 0.5) * binsize;
-                // Use the actual normalization in a square, not the lazy one, if periodic
-                let normalisation = rdf_normalisation(&box_lengths, n_particles, bincenter, binsize, periodic);
-                *(rdf[bin].write().unwrap()) =
-                    current_count / (n_particles as f64 * normalisation / 2.0); // the number of count is 1/ averaged over N 2/ normalised by the uniform case 3/ divided by two because pairs are counted once only
-            }
-        });
-
-        let mut rdf_vector = vec![0.0; nbins];
-        let mut field_corrs_vector = Array::<f64, _>::zeros((nbins, field_dim).f());
-        
-                
-        field_corrs_vector
-        .axis_iter_mut(Axis(0))
-        .into_par_iter()
-        .zip(rdf_vector.par_iter_mut())
-        .enumerate()
-        .for_each(|(bin, (mut field_bin, rdf_vector_bin))| {
-            *rdf_vector_bin = *rdf.get(bin).unwrap().read().unwrap();
-            for dim in 0..field_dim {
-                field_bin[dim] = *field_corrs
-                .get(bin)
-                .unwrap()
-                .get(dim)
-                .unwrap()
-                .read()
-                .unwrap();
-            }
-        });
-
-        return (rdf_vector, field_corrs_vector);
-    }
-
-    
-    pub fn compute_pnn_rdf(
-        points: &ArrayViewD<'_, f64>,
-        box_lengths: &Vec<f64>,
-        binsize: f64,
-        nn_order: usize,
-        periodic: bool
-    ) -> Vec<f64> {
-        // Check that the binsize is physical
-        assert!(
-            binsize > 0.0,
-            "Something is wrong with the binsize used for the RDF"
-        );
-
-        let npoints = points.shape()[0];
-        let ndim = points.shape()[1];
-        
-        assert!(npoints > 1);
-        assert!(ndim > 1);
-        assert!(ndim < 4);
-        assert!(box_lengths.len() == ndim);
-
-        let max_dist = if periodic {
-            box_lengths.iter().map(|x| (x/2.0).powi(2)).sum::<f64>().sqrt()
-        } else {
-            box_lengths.iter().map(|x| x.powi(2)).sum::<f64>().sqrt()
-        };
-        let nbins = (max_dist / binsize).ceil() as usize;
-        let rdf: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
-        let counts: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
-
-        if ndim == 2 { // 2D case
-
-            // Construct the R*-tree, taking into account periodic boundary conditions
-            // See https://en.wikipedia.org/wiki/R-tree and https://en.wikipedia.org/wiki/R*-tree
-            let rtree_positions = compute_periodic_rstar_tree(&points, box_lengths[0], box_lengths[1], periodic);
-            
-            (0..npoints).into_par_iter().for_each(|i| {
-                let current_point = [points[[i,0]], points[[i,1]]];
-                let mut iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&current_point).skip(nn_order);
-                let (_, dist2) = iter.next().unwrap();
-                
-                // determine the relevant bin, and update the count at that bin for g(r)
-                let index = (dist2.sqrt() / binsize).floor() as usize;
-                assert!(index < nbins);
-                *(counts[index].write().unwrap()) += 1.0;
-            });
-            
-        } else {
-            // Construct the R*-tree, taking into account periodic boundary conditions
-            // See https://en.wikipedia.org/wiki/R-tree and https://en.wikipedia.org/wiki/R*-tree
-            let rtree_positions = compute_periodic_rstar_tree_3d(&points, box_lengths[0], box_lengths[1], box_lengths[2], periodic);
-            
-            (0..npoints).into_par_iter().for_each(|i| {
-                let current_point = [points[[i,0]], points[[i,1]], points[[i,2]]];
-                let mut iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&current_point).skip(nn_order);
-                let (_, dist2) = iter.next().unwrap();
-                
-                // determine the relevant bin, and update the count at that bin for g(r)
-                let index = (dist2.sqrt() / binsize).floor() as usize;
-                assert!(index < nbins);
-                *(counts[index].write().unwrap()) += 1.0;
-            });
-        }
-
-
-        (0..nbins).into_par_iter().for_each(|bin| {
-            // normalise the values of the correlations by counts
-            let current_count = *counts[bin].read().unwrap();
-            if current_count != 0.0 {
-
-                // THEN only, compute the rdf from counts
-                let bincenter = (bin as f64 + 0.5) * binsize;
-                // Use the actual normalization in a square, not the lazy one, if periodic
-                let normalisation = rdf_normalisation(&box_lengths, npoints, bincenter, binsize, periodic);
-                *(rdf[bin].write().unwrap()) =
-                    current_count / (npoints as f64 * normalisation / 2.0); // the number of count is 1/ averaged over N 2/ normalised by the uniform case 3/ divided by two because pairs are counted once only
-            }
-        });
-
-        let mut rdf_vector = vec![0.0; nbins];
-        
-                
-
-        rdf_vector.par_iter_mut()
-        .enumerate()
-        .for_each(|(bin, rdf_vector_bin)| {
-            *rdf_vector_bin = *rdf.get(bin).unwrap().read().unwrap();
-        });
-
-        return rdf_vector;
-    }
-    
-    
-    pub fn compute_pnn_mean_nnbound_distances(
-        points: &ArrayViewD<'_, f64>,
-        box_lengths: &Vec<f64>,
-        nn_bound: usize,
-        periodic: bool
-    ) -> Vec<f64> {
-
-        let npoints = points.shape()[0];
-        let ndim = points.shape()[1];
-        
-        assert!(npoints > 1);
-        assert!(ndim > 1);
-        assert!(ndim < 4);
-        assert!(box_lengths.len() == ndim);
-
-        // Store this in a vector that is addressable in a naïvely parallel loop, at the cost of memory
-        let mut all_dists: Vec<Vec<f64>> = vec![vec![0.0; nn_bound]; npoints];
-
-        if ndim == 2 { // 2D case
-
-            // Construct the R*-tree, taking into account periodic boundary conditions
-            // See https://en.wikipedia.org/wiki/R-tree and https://en.wikipedia.org/wiki/R*-tree
-            let rtree_positions = compute_periodic_rstar_tree(&points, box_lengths[0], box_lengths[1], periodic);
-            
-            all_dists.par_iter_mut().enumerate().for_each(|(i, all_dists_i)| {
-                let current_point = [points[[i,0]], points[[i,1]]];
-                let mut iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&current_point).skip(1);
-                
-                for nn_order in 0..nn_bound {
-                    let (_, dist2) = iter.next().unwrap();
-                    all_dists_i[nn_order] = dist2.sqrt();
-                }
-                
-            });
-            
-        } else {
-            // Construct the R*-tree, taking into account periodic boundary conditions
-            // See https://en.wikipedia.org/wiki/R-tree and https://en.wikipedia.org/wiki/R*-tree
-            let rtree_positions = compute_periodic_rstar_tree_3d(&points, box_lengths[0], box_lengths[1], box_lengths[2], periodic);
-            
-            all_dists.par_iter_mut().enumerate().for_each(|(i, all_dists_i)| {
-                let current_point = [points[[i,0]], points[[i,1]], points[[i,2]]];
-                let mut iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&current_point).skip(1);
-                
-                for nn_order in 0..nn_bound {
-                    let (_, dist2) = iter.next().unwrap();
-                    all_dists_i[nn_order] += dist2.sqrt();
-                }
-            });
-        }
-
-        let mut mean_dists = vec![0.0; nn_bound];
-
-        mean_dists.par_iter_mut().enumerate().for_each(|(nn_order, mean_dist_order)| {
-            (0..npoints).into_iter().for_each(|i|{
-                *mean_dist_order += all_dists[i][nn_order];
-            });
-            *mean_dist_order /= npoints as f64;
-        });
-
-        return mean_dists;
-    }
-    
-    pub fn compute_radial_gyromorphic_corr_2d(
-        points: &ArrayViewD<'_, f64>,
-        box_size_x: f64,
-        box_size_y: f64,
-        binsize: f64,
-        periodic: bool,
-        order: u64,
-    ) -> (Vec<f64>, Array<f64, Dim<[usize; 2]>>) {
-        // Check that the binsize is physical
-        assert!(
-            binsize > 0.0,
-            "Something is wrong with the binsize used for the RDF"
-        );
-        
-        let box_lengths = vec![box_size_x, box_size_y];
-
-        // get the needed parameters from the input
-        let n_particles = points.shape()[0];
-        let max_dist = if periodic {
-            hypot(box_size_x / 2.0, box_size_y / 2.0)
-        } else {
-            hypot(box_size_x, box_size_y)
-        };
-        let nbins = (max_dist / binsize).ceil() as usize;
-        let rdf: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
-        let field_corrs: Vec<Vec<Arc<RwLock<f64>>>> =
-            vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); 2]; nbins];
-
-        // go through all pairs just once for all correlations and compute both rdf and the correlation
-        let counts: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
-        (0..n_particles).into_par_iter().for_each(|i| {
-            for j in i + 1..n_particles {
-                let xi = points[[i, 0]];
-                let xj = points[[j, 0]];
-                let yi = points[[i, 1]];
-                let yj = points[[j, 1]];
-
-                let mut r_ij = vec![xj - xi, yj - yi];
-                if periodic {
-                    ensure_periodicity(&mut r_ij, &box_lengths);
-                }
-                let dist_ij = hypot(r_ij[0], r_ij[1]);
-                assert!(
-                    dist_ij >= 0.0 && dist_ij < max_dist,
-                    "Something is wrong with the distance between particles!\nDistance: {:?}",
-                    dist_ij
-                );
-
-                // determine the relevant bin, and update the count at that bin for g(r)
-                let index = (dist_ij / binsize).floor() as usize;
-                *(counts[index].write().unwrap()) += 1.0;
-
-                // Also compute the field correlation
-                let theta_ij = atan2(r_ij[1], r_ij[0]);
-                let angle = order as f64 * theta_ij;
-                *(field_corrs[index][0].write().unwrap()) += angle.cos();
-                *(field_corrs[index][1].write().unwrap()) += angle.sin();
-            }
-        });
-
-        (0..nbins).into_par_iter().for_each(|bin| {
-            // normalise the values of the correlations by counts
-            let current_count = *counts[bin].read().unwrap();
-            if current_count != 0.0 {
-                // THEN only, compute the rdf from counts
-                let bincenter = (bin as f64 + 0.5) * binsize;
-                // Use the actual normalization in a square, not the lazy one, if periodic
-                let normalisation = rdf_normalisation(&box_lengths, n_particles, bincenter, binsize, periodic);
-                *(rdf[bin].write().unwrap()) =
-                    current_count / (n_particles as f64 * normalisation / 2.0); // the number of count is 1/ averaged over N 2/ normalised by the uniform case 3/ divided by two because pairs are counted once only
-                                                                                // The orientational order is just a Fourier mode of g, not an actual correlation function of a microscopic observable!
-                *(field_corrs[bin][0].write().unwrap()) /=
-                    2.0 * PI * (n_particles as f64 * normalisation / 2.0);
-                *(field_corrs[bin][1].write().unwrap()) /=
-                    2.0 * PI * (n_particles as f64 * normalisation / 2.0);
-            }
-        });
-
-        let mut rdf_vector = vec![0.0; nbins];
-        let mut field_corrs_vector = Array::<f64, _>::zeros((nbins, 2).f());
-        
-        field_corrs_vector
-        .axis_iter_mut(Axis(0))
-        .into_par_iter()
-        .zip(rdf_vector.par_iter_mut())
-        .enumerate()
-        .for_each(|(bin, (mut field_bin, rdf_vector_bin))| {
-            *rdf_vector_bin = *rdf.get(bin).unwrap().read().unwrap();
-            for dim in 0..2 {
-                field_bin[dim] = *field_corrs
-                .get(bin)
-                .unwrap()
-                .get(dim)
-                .unwrap()
-                .read()
-                .unwrap();
-            }
-        });
-
-        return (rdf_vector, field_corrs_vector);
-    }
-
-    pub fn compute_radial_correlations_3d(
-        points: &ArrayViewD<'_, f64>,
-        fields: &ArrayViewD<'_, f64>,
-        box_size_x: f64,
-        box_size_y: f64,
-        box_size_z: f64,
-        binsize: f64,
-        periodic: bool,
-        connected: bool,
-    ) -> (Vec<f64>, Array<f64, Dim<[usize; 2]>>) {
-        // Check that the binsize is physical
-        assert!(
-            binsize > 0.0,
-            "Something is wrong with the binsize used for the RDF"
-        );
-        
-        let box_lengths = vec![box_size_x, box_size_y, box_size_z];
-
-        // get the needed parameters from the input
-        let n_particles = points.shape()[0];
-        let field_dim = fields.shape()[1];
-        let max_dist = if periodic {
-            hypot(hypot(box_size_x / 2.0, box_size_y / 2.0), box_size_z / 2.0)
-        } else {
-            hypot(hypot(box_size_x, box_size_y), box_size_z)
-        };
-        let nbins = (max_dist / binsize).ceil() as usize;
-        let rdf: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
-        let field_corrs: Vec<Vec<Arc<RwLock<f64>>>> =
-            vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); field_dim]; nbins];
-
-        // compute the mean values of the quantities used in correlations
-        let mut mean_field: Vec<f64> = vec_no_clone![0.0; field_dim];
-        for dim in 0..field_dim {
-            mean_field[dim] = fields.slice(s![.., dim]).into_par_iter().sum();
-        }
-        for dim in 0..field_dim {
-            mean_field[dim] /= n_particles as f64;
-        }
-
-        // go through all pairs just once for all correlations and compute both rdf and the correlation
-        let counts: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
-        (0..n_particles).into_par_iter().for_each(|i| {
-            for j in i + 1..n_particles {
-                let xi = points[[i, 0]];
-                let xj = points[[j, 0]];
-                let yi = points[[i, 1]];
-                let yj = points[[j, 1]];
-                let zi = points[[i, 2]];
-                let zj = points[[j, 2]];
-
-                let mut r_ij = vec![xj - xi, yj - yi, zj - zi];
-                if periodic {
-                    ensure_periodicity(&mut r_ij, &box_lengths);
-                }
-                let dist_ij = hypot(hypot(r_ij[0], r_ij[1]), r_ij[2]);
-                assert!(
-                    dist_ij >= 0.0 && dist_ij < max_dist,
-                    "Something is wrong with the distance between particles!\nDistance: {:?}",
-                    dist_ij
-                );
-
-                // determine the relevant bin, and update the count at that bin for g(r)
-                let index = (dist_ij / binsize).floor() as usize;
-                *(counts[index].write().unwrap()) += 1.0;
-
-                // Also compute the field correlation
-                for k in 0..field_dim {
-                    if connected {
-                        *(field_corrs[index][k].write().unwrap()) +=
-                            (fields[[i, k]] - mean_field[k]) * (fields[[j, k]] - mean_field[k]);
-                    } else {
-                        *(field_corrs[index][k].write().unwrap()) +=
-                            fields[[i, k]] * fields[[j, k]];
-                    }
-                }
-            }
-        });
-
-        (0..nbins).into_par_iter().for_each(|bin| {
-            // normalise the values of the correlations by counts
-            let current_count = *counts[bin].read().unwrap();
-            if current_count != 0.0 {
-                for k in 0..field_dim {
-                    *(field_corrs[bin][k].write().unwrap()) /= current_count;
-                }
-
-                // THEN only, compute the rdf from counts
-                let bincenter = (bin as f64 + 0.5) * binsize;
-                // Use the actual normalization in a square, not the lazy one, if periodic
-                let normalisation = rdf_normalisation(&box_lengths, n_particles, bincenter, binsize, periodic);
-                *(rdf[bin].write().unwrap()) =
-                    current_count / (n_particles as f64 * normalisation / 2.0); // the number of count is 1/ averaged over N 2/ normalised by the uniform case 3/ divided by two because pairs are counted once only
-            }
-        });
-
-        let mut rdf_vector = vec![0.0; nbins];
-        let mut field_corrs_vector = Array::<f64, _>::zeros((nbins, field_dim).f());
-        
-        field_corrs_vector
-        .axis_iter_mut(Axis(0))
-        .into_par_iter()
-        .zip(rdf_vector.par_iter_mut())
-        .enumerate()
-        .for_each(|(bin, (mut field_bin, rdf_vector_bin))| {
-            *rdf_vector_bin = *rdf.get(bin).unwrap().read().unwrap();
-            for dim in 0..field_dim {
-                field_bin[dim] = *field_corrs
-                .get(bin)
-                .unwrap()
-                .get(dim)
-                .unwrap()
-                .read()
-                .unwrap();
-            }
-        });
-
-        return (rdf_vector, field_corrs_vector);
-    }
-    
-    pub fn compute_radial_correlations_2sphere(
-        points: &ArrayViewD<'_, f64>,
-        fields: &ArrayViewD<'_, f64>,
-        binsize: f64,
-        connected: bool,
-    ) -> (Vec<f64>, Array<f64, Dim<[usize; 2]>>) {
-        // Check that the binsize is physical
-        assert!(
-            binsize > 0.0,
-            "Something is wrong with the binsize used for the RDF"
-        );
-
-        // get the needed parameters from the input
-        assert!(points.shape()[1] == 2, "Points on the sphere should have only two coordinates, theta and phi.");
-        let n_particles = points.shape()[0];
-        let field_dim = fields.shape()[1];
-        let max_dist = PI;
-        
-        let nbins = (max_dist / binsize).ceil() as usize;
-        let rdf: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
-        let field_corrs: Vec<Vec<Arc<RwLock<f64>>>> =
-            vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); field_dim]; nbins];
-
-        // compute the mean values of the quantities used in correlations
-        let mut mean_field: Vec<f64> = vec_no_clone![0.0; field_dim];
-        for dim in 0..field_dim {
-            mean_field[dim] = fields.slice(s![.., dim]).into_par_iter().sum();
-        }
-
-        for dim in 0..field_dim {
-            mean_field[dim] /= n_particles as f64;
-        }
-
-        // go through all pairs just once for all correlations and compute both rdf and the correlation
-        let counts: Vec<Arc<RwLock<f64>>> = vec_no_clone![Arc::new(RwLock::new(0.0)); nbins];
-        (0..n_particles).into_par_iter().for_each(|i| {
-            for j in i + 1..n_particles {
-                let thetai = points[[i, 0]];
-                let thetaj = points[[j, 0]];
-                let phii = points[[i, 1]];
-                let phij = points[[j, 1]];
-
-                let mut cos_dist_ij = thetai.cos() * thetaj.cos() + thetai.sin()* thetaj.sin() * (phii - phij).cos();
-                // Deal with float precision issues at the extremes
-                if cos_dist_ij < -1.0 {
-                    cos_dist_ij = -1.0;
-                } else if cos_dist_ij > 1.0 {
-                    cos_dist_ij = 1.0;
-                }
-                
-                let dist_ij = cos_dist_ij.acos();
-                assert!(
-                    dist_ij >= 0.0 && dist_ij <= max_dist,
-                    "Something is wrong with the distance between particles!\nDistance: {:?}, Cos distance {:?}",
-                    dist_ij, cos_dist_ij
-                );
-
-                // determine the relevant bin, and update the count at that bin for g(r)
-                let index = (dist_ij / binsize).floor() as usize;
-                *(counts[index].write().unwrap()) += 1.0;
-
-                // Also compute the field correlation
-                for k in 0..field_dim {
-                    if connected {
-                        *(field_corrs[index][k].write().unwrap()) +=
-                            (fields[[i, k]] - mean_field[k]) * (fields[[j, k]] - mean_field[k]);
-                    } else {
-                        *(field_corrs[index][k].write().unwrap()) +=
-                            fields[[i, k]] * fields[[j, k]];
-                    }
-                }
-            }
-        });
-
-        (0..nbins).into_par_iter().for_each(|bin| {
-            // normalise the values of the correlations by counts
-            let current_count = *counts[bin].read().unwrap();
-            if current_count != 0.0 {
-                for k in 0..field_dim {
-                    *(field_corrs[bin][k].write().unwrap()) /= current_count;
-                }
-
-                // THEN only, compute the rdf from counts
-                let bincenter = (bin as f64 + 0.5) * binsize;
-                // Use the actual normalization in a square, not the lazy one, if periodic
-                let normalisation = (n_particles as f64).powi(2) * binsize * bincenter.sin() / 4.0;
-                *(rdf[bin].write().unwrap()) =
-                    current_count / normalisation;
-            }
-        });
-
-        let mut rdf_vector = vec![0.0; nbins];
-        let mut field_corrs_vector = Array::<f64, _>::zeros((nbins, field_dim).f());
-        
-                
-        field_corrs_vector
-        .axis_iter_mut(Axis(0))
-        .into_par_iter()
-        .zip(rdf_vector.par_iter_mut())
-        .enumerate()
-        .for_each(|(bin, (mut field_bin, rdf_vector_bin))| {
-            *rdf_vector_bin = *rdf.get(bin).unwrap().read().unwrap();
-            for dim in 0..field_dim {
-                field_bin[dim] = *field_corrs
-                .get(bin)
-                .unwrap()
-                .get(dim)
-                .unwrap()
-                .read()
-                .unwrap();
-            }
-        });
-
-        return (rdf_vector, field_corrs_vector);
-    }
-
-
-    pub fn compute_steinhardt_boops_2d(
-        points_array: &ArrayViewD<'_, f64>,
-        boop_order_array: &ArrayViewD<'_, isize>,
-        box_size_x: f64,
-        box_size_y: f64,
-        periodic: bool,
-    ) -> Array<f64, Dim<[usize; 3]>> {
-        // get the needed parameters from the input
-        let n_particles = points_array.shape()[0];
-        let boop_orders_number = boop_order_array.shape()[0];
-        
-        let box_lengths = vec![box_size_x, box_size_y];
-
-        let mut boop_vectors = Array::<f64, _>::zeros((n_particles, boop_orders_number, 2).f());
-
-        let delaunay = create_delaunay(points_array, periodic, &box_lengths);
-
-        boop_vectors
-            .axis_iter_mut(Axis(0))
-            .into_par_iter()
-            .enumerate()
-            .for_each(|(i, mut boops_i)| {
-                // In this scenario, the from_index is safe because only the n_particles first values are explored out of 9 times that
-                let fixed_handle = FixedHandleImpl::from_index(i);
-                let dynamic_handle = delaunay.vertex(fixed_handle);
-                let outgoing_edges = dynamic_handle.out_edges();
-
-                let mut neighbour_count = 0;
-
-                let xi = points_array[[i, 0]];
-                let yi = points_array[[i, 1]];
-
-                for e in outgoing_edges {
-                    neighbour_count += 1;
-
-                    let neigh_vertex = e.to().position();
-                    let dx = neigh_vertex.x - xi;
-                    let dy = neigh_vertex.y - yi;
-                    let mut vector = vec![dx, dy];
-                    if periodic {
-                        ensure_periodicity(&mut vector, &box_lengths);
-                    }
-
-                    let theta = atan2(vector[1], vector[0]);
-
-                    for n in 0..boop_orders_number {
-                        let order = boop_order_array[[n]] as f64;
-                        let angle = order * theta;
-
-                        let dpsinx = angle.cos();
-                        let dpsiny = angle.sin();
-
-                        boops_i[[n, 0]] += dpsinx;
-                        boops_i[[n, 1]] += dpsiny;
-                    }
-                }
-
-                for n in 0..boop_orders_number {
-                    boops_i[[n, 0]] /= neighbour_count as f64;
-                    boops_i[[n, 1]] /= neighbour_count as f64;
-                }
-            });
-
-        return boop_vectors;
-    }
-    
-    pub fn compute_voronoi_quantities_2d(
-        points_array: &ArrayViewD<'_, f64>,
-        box_size_x: f64,
-        box_size_y: f64,
-        periodic: bool,
-        voronoi_areas: bool,
-        voronoi_neighbour_count: bool,
-        voronoi_nn_distance: bool
-    ) -> (Option<Vec<f64>>, Option<Vec<usize>>, Option<Vec<f64>>) {
-        // get the needed parameters from the input
-        let n_particles = points_array.shape()[0];
-        
-        let box_lengths = vec![box_size_x, box_size_y];
-
-        let mut areas_vector = vec![0.0; n_particles];
-        let mut neighbour_counts_vector: Vec<usize> = vec![0; n_particles];
-        let mut nn_distances_vector = vec![0.0; n_particles];
-
-        let delaunay = create_delaunay(points_array, periodic, &box_lengths);
-
-        if voronoi_areas {
-            areas_vector.par_iter_mut().enumerate().for_each(|(i, voronoi_area_i)| {
-            // Find polygons, then compute their areas, https://docs.rs/geo/latest/geo/algorithm/area/trait.Area.html
-            let voronoi_polygon: Polygon<f64> =
-            get_centered_voronoi_cell(&delaunay, i);
-            *voronoi_area_i = voronoi_polygon.unsigned_area();
-            });
-        };
-        
-        if voronoi_neighbour_count {
-            neighbour_counts_vector.par_iter_mut().enumerate().for_each(|(i, count_i)| {
-                // In this scenario, the from_index is safe because only the n_particles first values are explored out of 9 times that
-                let fixed_handle = FixedHandleImpl::from_index(i);
-                let dynamic_handle = delaunay.vertex(fixed_handle);
-                let outgoing_edges = dynamic_handle.out_edges();
-                for _e in outgoing_edges {
-                    *count_i += 1;
-                }
-            });
-        }
-        
-        if voronoi_nn_distance {
-            nn_distances_vector.par_iter_mut().enumerate().for_each(|(i, distance_i)| {
-                // In this scenario, the from_index is safe because only the n_particles first values are explored out of 9 times that
-                let fixed_handle = FixedHandleImpl::from_index(i);
-                let dynamic_handle = delaunay.vertex(fixed_handle);
-                let outgoing_edges = dynamic_handle.out_edges();
-                
-                let xi = points_array[[i, 0]];
-                let yi = points_array[[i, 1]];
-                
-                let mut nn_distance = INFINITY;
-                
-                for e in outgoing_edges {
-                    let neigh_vertex = e.to().position();
-                    let dx = neigh_vertex.x - xi;
-                    let dy = neigh_vertex.y - yi;
-                    let mut vector = vec![dx, dy];
-                    if periodic {
-                        ensure_periodicity(&mut vector, &box_lengths);
-                    }
-                    let edge_length = hypot(vector[0], vector[1]);
-                    if edge_length < nn_distance {
-                        nn_distance = edge_length;
-                    }
-                }
-                
-                *distance_i = nn_distance;
-            });
-        }
-        
-        let output_areas = if voronoi_areas {
-            Some(areas_vector)
-        } else {
-            None
-        };
-        
-        let output_counts = if voronoi_neighbour_count {
-            Some(neighbour_counts_vector)
-        } else {
-            None
-        };
-        
-        let output_distances = if voronoi_nn_distance {
-            Some(nn_distances_vector)
-        } else {
-            None
-        };
-        
-        return (output_areas, output_counts, output_distances);
-        
-    }
-    
-    
-    pub fn get_centered_voronoi_cell(
-        delaunay: &DelaunayTriangulation<Point2<f64>>,
-        i: usize,
-    ) -> geo::Polygon<f64> {
-        // In this scenario, the from_index is safe because only the n_particles first values are explored out of 9 times that
-        let current_handle = FixedHandleImpl::from_index(i);
-        // Find Voronoi faces corresponding to both vertices of the Delaunay
-        let voronoi_face = delaunay.vertex(current_handle).as_voronoi_face();
-
-        // Convert the handles to Voronoi faces into polygons, in the form of vectors of 2-vectors.
-        // To understand what's being done here: go through https://docs.rs/spade/latest/spade/index.html
-        // The Delaunay, https://docs.rs/spade/latest/spade/struct.DelaunayTriangulation.html can be used to get Voronoi faces https://docs.rs/spade/latest/spade/handles/type.VoronoiFace.html#
-        // Voronoi faces have an impl to get oriented edges, from which one can get Voronoi vertices https://docs.rs/spade/latest/spade/handles/enum.VoronoiVertex.html
-        // Then, their positions can be found
-        let mut voronoi_polygon: Vec<Vec<f64>> = Vec::new();
-        let mut voronoi_center: Vec<f64> = vec![0.0; 2];
-        let mut voronoi_counter: usize = 0;
-        for voro_edge in voronoi_face.adjacent_edges() {
-            let voro_vertex = voro_edge.from().position().unwrap();
-            let vertex_x = voro_vertex.x;
-            let vertex_y = voro_vertex.y;
-            voronoi_polygon.push(vec![vertex_x, vertex_y]);
-            voronoi_center[0] += vertex_x;
-            voronoi_center[1] += vertex_y;
-            voronoi_counter += 1;
-        }
-        voronoi_center[0] /= voronoi_counter as f64;
-        voronoi_center[1] /= voronoi_counter as f64;
-        let mut voronoi_polygon_tuple: Vec<(f64, f64)> = Vec::new();
-        for k in 0..voronoi_counter {
-            voronoi_polygon[k][0] -= voronoi_center[0];
-            voronoi_polygon[k][1] -= voronoi_center[1];
-            voronoi_polygon_tuple.push((voronoi_polygon[k][0], voronoi_polygon[k][1]));
-        }
-
-        // Return a polygon, define polygons through geo https://docs.rs/geo/latest/geo/struct.Polygon.html
-        let voronoi_polygon_as_poly = Polygon::new(LineString::from(voronoi_polygon_tuple), vec![]);
-        return voronoi_polygon_as_poly;
-    }
-    
-    pub fn voronoi_furthest_site(
-        points_array: &ArrayViewD<'_, f64>,
-        box_size_x: f64,
-        box_size_y: f64,
-        periodic: bool
-    ) -> Array<f64, Dim<[usize; 2]>> {
-        // get the needed parameters from the input
-        let box_lengths = vec![box_size_x, box_size_y];
-        
-        // Create delaunay triangulation, and count total number of faces inside to create the output array
-        let delaunay = create_delaunay(points_array, periodic, &box_lengths);
-        let n_faces = delaunay.num_inner_faces();
-        let mut furthest_sites =  Array::<f64, _>::zeros((n_faces, 3).f());
-        
-        // Go through delaunay
-        delaunay.inner_faces().into_iter()
-        .zip(furthest_sites.axis_iter_mut(Axis(0)))
-        .par_bridge()
-        .into_par_iter()
-        .for_each(|(face_i, mut site_i)| {
-            let circumcenter = face_i.circumcenter();
-            site_i[[0]] = circumcenter.x;
-            site_i[[1]] = circumcenter.y;
-            
-            site_i[[2]] = INFINITY;
-            
-            for vertex in face_i.vertices() {
-                let vertex_coords = vertex.position();
-                let distance = hypot(vertex_coords.x - circumcenter.x, vertex_coords.y - circumcenter.y);
-                if distance <= site_i[[2]] {
-                    site_i[[2]] = distance;
-                }
-            }
-            
-         });
-        
-        return furthest_sites;
-        
-    }
-    
-    pub fn compute_pnn_distances(points: &ArrayViewD<'_, f64>, p: usize, box_lengths: &Vec<f64>, periodic: bool) -> Vec<f64> {
-        
-        let npoints = points.shape()[0];
-        let ndim = points.shape()[1];
-        
-        assert!(npoints > 1);
-        assert!(ndim > 1);
-        assert!(ndim < 4);
-        assert!(box_lengths.len() == ndim);
-
-        let mut pnn_distances = vec!(0.0; npoints);
-        
-        if ndim == 2 { // 2D case
-
-            // Construct the R*-tree, taking into account periodic boundary conditions
-            // See https://en.wikipedia.org/wiki/R-tree and https://en.wikipedia.org/wiki/R*-tree
-            let rtree_positions = compute_periodic_rstar_tree(&points, box_lengths[0], box_lengths[1], periodic);
-            
-            pnn_distances.par_iter_mut().enumerate().for_each(|(i, pnn_distance_i)| {
-            
-                let current_point = [points[[i,0]], points[[i,1]]];
-                let mut iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&current_point).skip(p);
-                let (_, dist2) = iter.next().unwrap();
-                *pnn_distance_i = dist2.sqrt();
-            
-            });
-            
-        } else {
-            // Construct the R*-tree, taking into account periodic boundary conditions
-            // See https://en.wikipedia.org/wiki/R-tree and https://en.wikipedia.org/wiki/R*-tree
-            let rtree_positions = compute_periodic_rstar_tree_3d(&points, box_lengths[0], box_lengths[1], box_lengths[2], periodic);
-            
-            pnn_distances.par_iter_mut().enumerate().for_each(|(i, pnn_distance_i)| {
-            
-                let current_point = [points[[i,0]], points[[i,1]], points[[i,2]]];
-                let mut iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&current_point).skip(p);
-                let (_, dist2) = iter.next().unwrap();
-                *pnn_distance_i = dist2.sqrt();
-            
-            });
-            
-        }
-        
-        return pnn_distances;
-        
-    }
-    
-    pub fn cluster_by_distance(points_array: &ArrayViewD<'_, f64>, threshold: f64, box_lengths: &Vec<f64>, periodic: bool) -> Vec<usize> {
-        // tag particles by cluster they belong to, using a single threshold distance throughout
-        
-        let npoints = points_array.shape()[0];
-        let ndim = points_array.shape()[1];
-
-        assert!(npoints > 1);
-        assert!(ndim == 2 || ndim == 3); // Need to implement/find delaunay in 3d
-        
-        let mut cluster_id: Vec<usize> = (0..npoints).collect();
-        let mut done = false;
-        
-        // Make this into a LeftRight here and in point variance https://stackoverflow.com/questions/33390395/can-a-function-return-different-types-depending-on-conditional-statements-in-the
-        if ndim == 2 {
-            
-            let mut delaunay = create_delaunay_with_tags(points_array, &cluster_id, periodic, &box_lengths);
-            while !done {
-                let change_list = Arc::new(RwLock::new(Vec::new()));
-
-                cluster_id.par_iter_mut().enumerate().for_each( | (i, id)  |  {
-                    // In this scenario, the from_index is safe because only the n_particles first values are explored out of 9 times that
-                    let fixed_handle = FixedHandleImpl::from_index(i);
-                    let dynamic_handle = delaunay.vertex(fixed_handle);
-                    let outgoing_edges = dynamic_handle.out_edges();
-                    
-                    let xi = points_array[[i, 0]];
-                    let yi = points_array[[i, 1]];
-    
-                    for e in outgoing_edges {
-    
-                        let neigh_vertex = e.to().position();
-                        let dx = neigh_vertex.x - xi;
-                        let dy = neigh_vertex.y - yi;
-                        let mut vector = vec![dx, dy];
-                        if periodic {
-                            ensure_periodicity(&mut vector, &box_lengths);
-                        }
-                        
-                        // Inherit lower of 2 tags if distance is smaller than threshold
-                        let edge_length = hypot(vector[0], vector[1]);
-                        let neigh_tag = e.to().data().tag;
-                        if edge_length <= threshold && *id > neigh_tag {
-                                *id = neigh_tag;
-                                change_list.write().unwrap().push(i);
-                        }
-                        
-                    }
-                    
-                } );
-                
-                // Update tags in delaunay
-                // TODO make this part better
-                change_list.read().unwrap().clone().into_iter().for_each(| index | {
-                let fixed_handle = FixedHandleImpl::from_index(index);
-                (*delaunay.vertex_data_mut(fixed_handle)).tag = cluster_id[index];
-                if periodic {
-                    for p in 1..8 {
-                        let fixed_handle = FixedHandleImpl::from_index(index + npoints * p);
-                        (*delaunay.vertex_data_mut(fixed_handle)).tag = cluster_id[index];
-                    }
-                }
-                    
-                });
-
-                done = change_list.read().unwrap().len() == 0;
-            }
-            
-        } else if ndim == 3 {
-            
-            // In that case, use an rtree.
-            // It's a bit more annoying to navigate than a delaunay for propagation because order is not trivially preserved
-            // Easy strategy is to have a vec<usize> with 2 elements as a tag, particle_id and cluster_id
-            let id_pair_vec: Vec<ParticleClusterTags> = (0..npoints).zip(0..npoints).map(|(i,j)| { ParticleClusterTags{id:i, cluster_id:j} } ).collect();
-            let id_pair_array = Array::from_vec(id_pair_vec);
-            
-            let mut rtree = compute_decorated_rstar_tree_3d(points_array, &id_pair_array.view(), box_lengths[0], box_lengths[1], box_lengths[2], periodic);
-            while !done {
-                // let change_list = Arc::new(RwLock::new(Vec::new()));
-                let has_not_changed = Arc::new(RwLock::new(true));
-
-                cluster_id.par_iter_mut().enumerate().for_each( | (i, id)  |  {
-                    // Here the fast option is to go through nearest neighbors and update based on that
-                    
-                    let mut neighbor_with_distance_2_iter = rtree.nearest_neighbor_iter_with_distance_2(&[points_array[[i,0]], points_array[[i,1]], points_array[[i,2]]]).skip(1);
-                    let mut still_neighbors = true;
-                    while still_neighbors {
-                        let (neighbor, dist2) = neighbor_with_distance_2_iter.next().unwrap();
-                        // let neigh_id = neighbor.data.id;
-                        let neigh_cluster_id = neighbor.data.cluster_id;
-                        if dist2 <= threshold.powi(2) && *id > neigh_cluster_id {
-                            *id = neigh_cluster_id;
-                            // change_list.write().unwrap().push(i); // Replaced by brute-force parallel loop for now since rtree is not ordered
-                            if *has_not_changed.read().unwrap() {
-                                *has_not_changed.write().unwrap() = false;
-                            }
-                        } else if dist2 >= threshold.powi(2) {
-                            still_neighbors = false;
-                        }
-                    }
-                } );
-                
-                // Update tags in rtree
-                // TODO make this part better // Right now: brute-forcing update
-                done = *has_not_changed.read().unwrap();
-                if !done {
-                    rtree.iter_mut().par_bridge().into_par_iter().for_each(|point_with_data| {
-                        let particle_id = point_with_data.data.id;
-                        point_with_data.data.cluster_id = cluster_id[particle_id];
-                    });
-                }
-
-            }
-            
-            
-        } else {
-            panic!("Not implemented yet!");
-        }
-        
-        return cluster_id;
-        
-    }
-    
-    pub struct PointWithTag<T> {
-        position: Point2<f64>,
-        tag: T,
-    }
-    
-    impl<T> Copy for PointWithTag<T> where T: Copy {}
-    impl<T> Clone for PointWithTag<T> where T: Copy {
-        fn clone(&self) -> Self {
-            *self
-        }
-    }
-    
-    impl<T: Display> HasPosition for PointWithTag<T> {
-        type Scalar = f64;
-    
-        fn position(&self) -> Point2<f64> {
-            self.position
-        }
-    }
-    
-    // Needed for rtree tags for cluster
-    #[derive(Clone)]
-    #[derive(Copy)]
-    #[derive(Debug)]
-    struct ParticleClusterTags {
-        id: usize,
-        cluster_id: usize
-    }
-    impl Display for ParticleClusterTags {
-        fn fmt(&self, f: &mut Formatter) -> Result {
-            write!(f, "id: {:?}, cluster_id: {:?}\n", self.id, self.cluster_id)?;
-            Ok(())
-        }
-    }
-    
-    pub fn create_delaunay_with_tags<T: Display + Send + Sync + Copy>(points_array: &ArrayViewD<'_, f64>, tags: &Vec<T>, periodic: bool, box_lengths: &Vec<f64>) 
-    -> DelaunayTriangulation<PointWithTag<T>> {
-        // Delaunay triangulation where each point carries data with some arbitrary type
-        
-        // get the needed parameters from the input
-        let n_particles = points_array.shape()[0];
-        
-        let n_loop = if periodic { 9 * n_particles } else { n_particles };
-
-        let default_tag = tags[0];
-        // Enforce periodicity by adding copies.
-        let mut tagged_points: Vec<PointWithTag<T>> = vec![PointWithTag { position: Point2::new(0.0, 0.0), tag: default_tag}; n_loop];
-
-        tagged_points.par_iter_mut().enumerate().for_each(|(i, tagged_pointi)| {
-            let index = i % n_particles;
-            let quotient = i / n_particles;
-            let nx = match quotient / 3 {
-                0 => 0.0,
-                1 => -1.0,
-                2 => 1.0,
-                _ => 2.0,
-            };
-            let ny = match quotient % 3 {
-                0 => 0.0,
-                1 => -1.0,
-                2 => 1.0,
-                _ => 2.0,
-            };
-
-            assert!(nx < 2.0 && ny < 2.0, "Unexpected error when cloning boxes.");
-
-            let xi = points_array[[index, 0]];
-            let yi = points_array[[index, 1]];
-
-            let shifted_x: f64 = xi + nx * box_lengths[0];
-            let shifted_y: f64 = yi + ny * box_lengths[1];
-
-            let newpoint: Point2<f64> = Point2::new(shifted_x, shifted_y);
-
-            tagged_pointi.position = newpoint;
-            tagged_pointi.tag = tags[index];
-        });
-
-        // Bulk load the points
-        // bulk_load_stable ensures that the ordering of points is conserved, assuming no precise overlap
-        let tagged_delaunay = DelaunayTriangulation::<PointWithTag<T>>::bulk_load_stable(tagged_points).unwrap();
-        
-        return tagged_delaunay;
-    }
-    
-    pub fn create_delaunay(points_array: &ArrayViewD<'_, f64>, periodic: bool, box_lengths: &Vec<f64>) -> DelaunayTriangulation<Point2<f64>> {
-        
-        // get the needed parameters from the input
-        let n_particles = points_array.shape()[0];
-        
-        let n_loop = if periodic { 9 * n_particles } else { n_particles };
-
-        // Enforce periodicity by adding copies.
-        let mut points: Vec<Point2<f64>> = vec![Point2::new(0.0, 0.0); n_loop];
-
-        points.par_iter_mut().enumerate().for_each(|(i, pointi)| {
-            let index = i % n_particles;
-            let quotient = i / n_particles;
-            let nx = match quotient / 3 {
-                0 => 0.0,
-                1 => -1.0,
-                2 => 1.0,
-                _ => 2.0,
-            };
-            let ny = match quotient % 3 {
-                0 => 0.0,
-                1 => -1.0,
-                2 => 1.0,
-                _ => 2.0,
-            };
-
-            assert!(nx < 2.0 && ny < 2.0, "Unexpected error when cloning boxes.");
-
-            let xi = points_array[[index, 0]];
-            let yi = points_array[[index, 1]];
-
-            let shifted_x: f64 = xi + nx * box_lengths[0];
-            let shifted_y: f64 = yi + ny * box_lengths[1];
-
-            let newpoint: Point2<f64> = Point2::new(shifted_x, shifted_y);
-
-            *pointi = newpoint;
-        });
-
-        // Bulk load the points
-        // bulk_load_stable ensures that the ordering of points is conserved, assuming no precise overlap
-        let delaunay = DelaunayTriangulation::<Point2<f64>>::bulk_load_stable(points).unwrap();
-        
-        return delaunay;
-    }
-    
-    pub fn point_variances(points: &ArrayViewD<'_, f64>, radii: &ArrayView1<'_, f64>, box_lengths: &Vec<f64>, n_samples: usize, periodic: bool) -> Vec<f64> {
-
-        let n_radii = radii.shape()[0];
-        let means  = vec_no_clone![Arc::new(RwLock::new(0.0_f64)); n_radii];
-        let means2 = vec_no_clone![Arc::new(RwLock::new(0.0_f64)); n_radii];
-
-        let npoints = points.shape()[0];
-        let ndim = points.shape()[1];
-
-        assert!(npoints > 1);
-        assert!(ndim < 4);
-        assert!(box_lengths.len() == ndim);
-
-        if ndim == 2 { // 2D case
-
-            // Construct the R*-tree, taking into account periodic boundary conditions
-            // See https://en.wikipedia.org/wiki/R-tree and https://en.wikipedia.org/wiki/R*-tree
-            let rtree_positions = compute_periodic_rstar_tree(&points, box_lengths[0], box_lengths[1], periodic);
-
-            // Throw points at random: this can be parallelized if necessary
-            radii.to_vec().into_iter().enumerate().for_each(|(current_index,radius)| {
-
-                (0..n_samples).into_par_iter().for_each( |_sample| {
-
-                    let mut rng = rand::rng();
-
-                    let mut random: f64 = rng.random();
-                    let x_center = random; 
-                    random = rng.random();
-                    let y_center = random;
-
-                    let r_center = vec![x_center, y_center];
-                    let count = count_points_in_disk(&rtree_positions, r_center, radius);
-
-                    *means.get(current_index).unwrap().write().unwrap() += count as f64;
-                    *means2.get(current_index).unwrap().write().unwrap() += (count*count) as f64;
-                    
-                });
-            });
-
-        } else { // 3D case
-
-            let rtree_positions = compute_periodic_rstar_tree_3d(&points, box_lengths[0], box_lengths[1], box_lengths[2], periodic);
-
-            // Throw points at random: this can be parallelized if necessary
-            radii.to_vec().into_iter().enumerate().for_each(|(current_index,radius)| {
-                (0..n_samples).into_par_iter().for_each( |_sample| {
-
-                    let mut rng = rand::rng();
-
-                    let mut random: f64 = rng.random();
-                    let x_center = random; 
-                    random = rng.random();
-                    let y_center = random;
-                    random = rng.random();
-                    let z_center = random;
-
-                    let r_center = vec![x_center, y_center, z_center];
-                    let count = count_points_in_ball(&rtree_positions, r_center, radius);
-
-                    *means.get(current_index).unwrap().write().unwrap() += count as f64;
-                    *means2.get(current_index).unwrap().write().unwrap() += (count*count) as f64;
-                    
-                });
-            });
-        }
-
-        let mut reduced_variances = Vec::new();
-        for index in 0..n_radii {
-            let current_mean = *means.get(index).unwrap().read().unwrap() / n_samples as f64;
-            let current_mean2 = *means2.get(index).unwrap().read().unwrap() / n_samples as f64;
-
-            let reduced_variance = current_mean2/ (current_mean*current_mean) - 1.0;
-            reduced_variances.push(reduced_variance)
-        }
-
-        return reduced_variances;
-    }
-
-    pub fn count_metric_neighbors(points: &ArrayViewD<'_, f64>, radii: &ArrayView1<'_, f64>, threshold: f64, box_lengths: &Vec<f64>, periodic: bool) -> Vec<usize> {
-        
-        let npoints = points.shape()[0];
-        let ndim = points.shape()[1];
-        
-        let mut neighbor_counts = vec!(0; npoints);
-        
-        assert!(npoints > 1);
-        assert!(ndim < 4);
-        assert!(box_lengths.len() == ndim);
-        
-        let max_radius = *radii.into_par_iter().max_by(|a, b| a.total_cmp(b)).unwrap();
-        let threshold2 = threshold * threshold;
-
-        if ndim == 2 { // 2D case
-
-            // Construct the R*-tree, taking into account periodic boundary conditions
-            // See https://en.wikipedia.org/wiki/R-tree and https://en.wikipedia.org/wiki/R*-tree
-            let rtree_positions = compute_decorated_rstar_tree(&points, &radii, box_lengths[0], box_lengths[1], periodic);
-
-            radii.to_vec().into_par_iter().zip(neighbor_counts.par_iter_mut()).enumerate().for_each(|(current_index,(radius, count))| {
-                let mut neighbor_with_distance_2_iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&[points[[current_index,0]], points[[current_index,1]]]).skip(1);
-                let mut still_neighbors = true;
-                while still_neighbors {
-                    let (neighbor, dist2) = neighbor_with_distance_2_iter.next().unwrap();
-                    let neighbor_radius = neighbor.data;
-                    if dist2 <= threshold2 * (radius + neighbor_radius).powi(2) {
-                        *count += 1;
-                    } else if dist2 >= threshold2 * (radius + max_radius).powi(2) {
-                        still_neighbors = false;
-                    }
-                }
-            });
-
-        } else { // 3D case
-
-            let rtree_positions = compute_decorated_rstar_tree_3d(&points, &radii, box_lengths[0], box_lengths[1], box_lengths[2], periodic);
-
-            radii.to_vec().into_par_iter().zip(neighbor_counts.par_iter_mut()).enumerate().for_each(|(current_index,(radius, count))| {
-                let mut neighbor_with_distance_2_iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&[points[[current_index,0]], points[[current_index,1]], points[[current_index, 2]]]).skip(1);
-                let mut still_neighbors = true;
-                while still_neighbors {
-                    let (neighbor, dist2) = neighbor_with_distance_2_iter.next().unwrap();
-                    let neighbor_radius = neighbor.data;
-                    if dist2 <= threshold * (radius + neighbor_radius).powi(2) {
-                        *count += 1;
-                    } else if dist2 >= threshold * (radius + max_radius).powi(2) {
-                        still_neighbors = false;
-                    }
-                }
-            });
-            
-        }
-        
-        
-        return neighbor_counts;
-        
-    }
-    
-    pub fn point_variances_2sphere(points: &ArrayViewD<'_, f64>, radii: &ArrayView1<'_, f64>, n_samples: usize) -> Vec<f64> {
-
-        let n_radii = radii.shape()[0];
-        let means  = vec_no_clone![Arc::new(RwLock::new(0.0_f64)); n_radii];
-        let means2 = vec_no_clone![Arc::new(RwLock::new(0.0_f64)); n_radii];
-
-        let npoints = points.shape()[0];
-        let ndim = points.shape()[1];
-
-        assert!(npoints > 1);
-        assert!(ndim == 2, "Expected points in theta, phi representation"); // Expect points in theta, phi representation
-
-        let points_euclidean = euclidean_from_spherical(&points);
-        let indices = Array::from_iter(0..npoints);
-
-        // Decorated rstar with index of particle to find spherical coordinates again
-        let rtree_positions = compute_decorated_rstar_tree_3d(&points_euclidean.into_dyn().view(), &indices.view(), 2.0, 2.0, 2.0, false);
-
-        // Throw points at random: this can be parallelized if necessary
-        radii.to_vec().into_iter().enumerate().for_each(|(current_index,radius)| {
-            (0..n_samples).into_par_iter().for_each( |_sample| {
-
-                let mut rng = rand::rng();
-
-                let mut random: f64 = rng.random();
-                let phi_center = 2.0 * PI * random; 
-                random = rng.random();
-                let theta_center = (2.0 * random - 1.0).acos();
-
-                let r_center = [theta_center, phi_center];
-                // The Euclidean distance is a LOWER BOUND of the geodetic distance on the sphere
-                // Thus, all neighbors by the great-circle distance at some cutoff are a subset of the Euclidean neighbors at the same distance
-                let count = count_points_in_disk_2sphere(&rtree_positions, &points, r_center, radius);
-                
-                *means.get(current_index).unwrap().write().unwrap() += count as f64;
-                *means2.get(current_index).unwrap().write().unwrap() += (count*count) as f64;
-                
-            });
-        });
-
-        let mut reduced_variances = Vec::new();
-        for index in 0..n_radii {
-            let current_mean = *means.get(index).unwrap().read().unwrap() / n_samples as f64;
-            let current_mean2 = *means2.get(index).unwrap().read().unwrap() / n_samples as f64;
-
-            let reduced_variance = current_mean2/ (current_mean*current_mean) - 1.0;
-            reduced_variances.push(reduced_variance)
-        }
-
-        return reduced_variances;
-    }
-    
-    pub fn count_metric_neighbors_2sphere(points: &ArrayViewD<'_, f64>, radii: &ArrayView1<'_, f64>, threshold: f64) -> Vec<usize> {
-        
-        let npoints = points.shape()[0];
-        let ndim = points.shape()[1];
-        
-        let mut neighbor_counts = vec!(0; npoints);
-        
-        assert!(npoints > 1);
-        assert!(ndim == 2); // Assumes theta,phi format
-        
-        let max_radius = *radii.into_par_iter().max_by(|a, b| a.total_cmp(b)).unwrap();
-        let threshold2 = threshold * threshold;
-        
-        let points_euclidean = euclidean_from_spherical(&points);
-        let indices = Array::from_iter(0..npoints);
-
-        // Decorated rstar with index of particle to find spherical coordinates again
-        let rtree_positions = compute_decorated_rstar_tree_3d(&points_euclidean.into_dyn().view(), &indices.view(), 2.0, 2.0, 2.0, false);
-
-        radii.to_vec().into_par_iter().zip(neighbor_counts.par_iter_mut()).enumerate().for_each(|(current_index,(radius, count))| {
-            let mut neighbor_with_distance_2_iter = rtree_positions.nearest_neighbor_iter_with_distance_2(&[points[[current_index,0]], points[[current_index,1]],points[[current_index,2]]]).skip(1);
-            let mut still_neighbors = true;
-            while still_neighbors {
-                let (neighbor, dist2) = neighbor_with_distance_2_iter.next().unwrap();
-                let neighbor_index = neighbor.data;
-                
-                let neighbor_radius = radii[neighbor_index];
-                
-                // The euclidean distance is a LOWER bound of the geodesic distance
-                // Thus, if the Euclidean distance is bigger than the threshold, the loop can be broken
-                if dist2 >= threshold2 * (radius + max_radius).powi(2) {
-                    still_neighbors = false;
-                } else { 
-                    // Have to check the geodesic distance
-                    let current_point = [points[[current_index,0]], points[[current_index,2]]];
-                    let neighbor_point = [points[[neighbor_index,0]], points[[neighbor_index,2]]];
-                    let geodesic_distance = great_circle_distance(&current_point, &neighbor_point);
-                    let geodesic_dist2 = geodesic_distance * geodesic_distance;
-                    
-                    if geodesic_dist2 <= threshold2 * (radius + neighbor_radius).powi(2) {
-                        *count += 1;
-                    } else if geodesic_dist2 >= threshold2 * (radius + max_radius).powi(2) {
-                    still_neighbors = false;
-                    }
-                }
-            }
-        });
-        
-        return neighbor_counts;
-        
-    }
-    
-    pub fn count_points_in_disk(rtree: &RTree<[f64;2]>, r_center: Vec<f64>, radius: f64) -> usize {
-
-        let centerpoint = [r_center[0], r_center[1]];
-
-        // let points = rtree.lookup_in_circle(&centerpoint, &(radius*radius));
-        let points = rtree.locate_within_distance(centerpoint, radius*radius).collect::<Vec<_>>();
-        // let count = points.len();
-        let count = points.len();
-
-        return count
-    }
-
-    pub fn count_points_in_ball(rtree: &RTree<[f64;3]>, r_center: Vec<f64>, radius: f64) -> usize {
-
-        // let centerpoint: Point3<f64> = Point3::new(r_center[0], r_center[1], r_center[2]);
-        let centerpoint = [r_center[0], r_center[1], r_center[2]];
-
-        // let points = rtree.lookup_in_circle(&centerpoint, &(radius*radius));
-        let points = rtree.locate_within_distance(centerpoint, radius*radius).collect::<Vec<_>>();
-        // let count = points.len();
-        let count = points.len();
-
-        return count
-    }
-    
-        pub fn count_points_in_disk_2sphere(rtree: &RTree<GeomWithData<[f64;3],usize>>, spherical_points: &ArrayViewD<'_, f64>, centerpoint_spherical: [f64; 2], radius: f64) -> usize {
-
-        // let centerpoint: Point3<f64> = Point3::new(r_center[0], r_center[1], r_center[2]);
-        let centerpoint_euclidean = euclidean_from_spherical_single_point(centerpoint_spherical[0], centerpoint_spherical[1]);
-
-        // let points = rtree.lookup_in_circle(&centerpoint, &(radius*radius));
-        let points = rtree.locate_within_distance(centerpoint_euclidean, radius*radius).collect::<Vec<_>>();
-        // Need to find, within these candidates, which points are actually within the disk in geodetic distance
-        let count: usize = points.into_par_iter().map(|point_with_index| {
-            let point_index = point_with_index.data;
-            let point_spherical = [spherical_points[[point_index,0]], spherical_points[[point_index,1]]];
-            let dist = great_circle_distance(&centerpoint_spherical, &point_spherical);
-            let is_neighbor = if dist < radius { 1 } else { 0 } as usize;
-            is_neighbor
-        }).collect::<Vec<usize>>().into_par_iter().sum();
-
-        return count
-    }
-    
-    pub fn great_circle_distance(point1: &[f64;2], point2: &[f64;2]) -> f64 {
-        
-        (point1[0].cos() * point2[0].cos() + point1[0].sin() * point2[0].sin() * (point1[1] - point2[1]).cos()).acos()
-        
-    }
-    
-    pub fn euclidean_from_spherical(points: &ArrayViewD<'_, f64>) -> Array<f64, Dim<[usize; 2]>> {
-        
-        points.axis_iter(Axis(0)).into_par_iter().map(|point| {
-            euclidean_from_spherical_single_point(point[[0]], point[[1]])
-        }).collect::<Vec<[f64;3]>>().into()
-
-    }
-    
-    pub fn euclidean_from_spherical_single_point(theta: f64, phi: f64) -> [f64; 3] {
-        let sin_theta = theta.sin();
-        [sin_theta * phi.cos(), sin_theta * phi.sin(), theta.cos() ]
-    }
-
-    pub fn compute_periodic_rstar_tree(
-        positions: &ArrayViewD<'_, f64>,
-        box_size_x: f64,
-        box_size_y: f64,
-        periodic: bool
-    ) -> RTree<[f64;2]> {
-
-
-        // Create an empty for the vector of points to load into the tree
-        // let mut points_vector: Vec<Point2<f64>> = Vec::new();
-        // let mut points_vector: Arc<RwLock<Vec<Point2<f64>>>> = Arc::new(RwLock::new(Vec::new()));
-        let points_vector: Arc<RwLock<Vec<[f64;2]>>> = Arc::new(RwLock::new(Vec::new()));
-
-        let n_copies: usize = if periodic { 9 } else { 1 };
-        // Get the number of particles from positions, and consider 9 copies of the system to take into account the PBCs
-        let n_particles = positions.shape()[0];
-        (0..n_copies*n_particles).into_par_iter().for_each(|i| {
-        // for i in 0..9 * n_particles {
-            let index = i % n_particles;
-            let quotient = i / n_particles;
-            let nx = match quotient / 3 {
-                0 => 0.0,
-                1 => -1.0,
-                2 => 1.0,
-                _ => 2.0,
-            };
-            let ny = match quotient % 3 {
-                0 => 0.0,
-                1 => -1.0,
-                2 => 1.0,
-                _ => 2.0,
-            };
-
-            assert!(nx < 2.0 && ny < 2.0, "Unexpected error when cloning boxes.");
-
-            let shifted_x: f64 = positions[[index, 0]] + nx * box_size_x;
-            let shifted_y: f64 = positions[[index, 1]] + ny * box_size_y;
-
-            let is_in_x = shifted_x >= -0.5 * box_size_x && shifted_x <= 1.5 * box_size_x;
-            let is_in_y = shifted_y >= -0.5 * box_size_y && shifted_y <= 1.5 * box_size_y;
-
-            if is_in_x && is_in_y {
-
-                // let newpoint: Point2<f64> = Point2::new(shifted_x, shifted_y);
-                let newpoint = [shifted_x, shifted_y];
-
-                // points_vector.push(newpoint);
-                points_vector.write().unwrap().push(newpoint);
-            }
-        // }
-        });
-
-        //Bulk-load the vector into a new rtree, then return it
-        // It's apparently better? http://ftp.informatik.rwth-aachen.de/Publications/CEUR-WS/Vol-74/files/FORUM_18.pdf
-        let rtree = RTree::bulk_load(points_vector.read().unwrap().to_vec());
-
-        rtree
-    }
-
-
-    pub fn compute_periodic_rstar_tree_3d(
-        positions: &ArrayViewD<'_, f64>,
-        box_size_x: f64,
-        box_size_y: f64,
-        box_size_z: f64,
-        periodic: bool
-    ) -> RTree<[f64;3]> {
-
-
-        // Create an empty for the vector of points to load into the tree
-        // let mut points_vector: Vec<Point2<f64>> = Vec::new();
-        // let mut points_vector: Arc<RwLock<Vec<Point3<f64>>>> = Arc::new(RwLock::new(Vec::new()));
-        let points_vector: Arc<RwLock<Vec<[f64;3]>>> = Arc::new(RwLock::new(Vec::new()));
-
-        // Get the number of particles from positions, and consider 27 copies of the system to take into account the PBCs
-        let n_copies: usize = if periodic { 27 } else { 1 };
-        let n_particles = positions.shape()[0];
-        (0..n_copies*n_particles).into_par_iter().for_each(|i| {
-
-            let index = i % n_particles;
-            let quotient = i / n_particles;
-            let triplet_1 = quotient % 3;
-            let nonuplet = quotient / 3;
-            let triplet_2 = nonuplet % 3;
-            let triplet_3 = nonuplet / 3;
-
-            let nx = match triplet_1 {
-                0 => 0.0,
-                1 => -1.0,
-                2 => 1.0,
-                _ => 2.0,
-            };
-            let ny = match triplet_2 {
-                0 => 0.0,
-                1 => -1.0,
-                2 => 1.0,
-                _ => 2.0,
-            };
-            let nz = match triplet_3 {
-                0 => 0.0,
-                1 => -1.0,
-                2 => 1.0,
-                _ => 2.0,
-            };
-
-            assert!(nx < 2.0 && ny < 2.0 && nz < 2.0, "Unexpected error when cloning boxes.");
-
-            let shifted_x: f64 = positions[[index, 0]] + nx * box_size_x;
-            let shifted_y: f64 = positions[[index, 1]] + ny * box_size_y;
-            let shifted_z: f64 = positions[[index, 2]] + nz * box_size_z;
-
-            let is_in_x = shifted_x >= -0.5 * box_size_x && shifted_x <= 1.5 * box_size_x;
-            let is_in_y = shifted_y >= -0.5 * box_size_y && shifted_y <= 1.5 * box_size_y;
-            let is_in_z = shifted_z >= -0.5 * box_size_z && shifted_z <= 1.5 * box_size_z;
-
-            if is_in_x && is_in_y && is_in_z {
-
-                // let newpoint: Point3<f64> = Point3::new(shifted_x, shifted_y, shifted_z);
-                let newpoint = [shifted_x, shifted_y, shifted_z];
-
-                // points_vector.push(newpoint);
-                points_vector.write().unwrap().push(newpoint);
-            }
-        // }
-        });
-
-        //Bulk-load the vector into a new rtree, then return it
-        // It's apparently better? http://ftp.informatik.rwth-aachen.de/Publications/CEUR-WS/Vol-74/files/FORUM_18.pdf
-        let rtree = RTree::bulk_load(points_vector.read().unwrap().to_vec());
-
-        rtree
-    }
-    
-    // https://docs.rs/rstar/latest/rstar/primitives/struct.GeomWithData.html
-    type ListPointWithTag<T, const N:usize> = GeomWithData<[f64; N], T>;
-
-    pub fn compute_decorated_rstar_tree<T: Display + Send + Sync + Copy>(
-        positions: &ArrayViewD<'_, f64>,
-        field: &ArrayView1<'_, T>, // Assumed scalar for now
-        box_size_x: f64,
-        box_size_y: f64,
-        periodic: bool
-    ) -> RTree<ListPointWithTag<T, 2>> {
-
-
-        // Create an empty for the vector of points to load into the tree
-        // let mut points_vector: Vec<Point2<f64>> = Vec::new();
-        // let mut points_vector: Arc<RwLock<Vec<Point2<f64>>>> = Arc::new(RwLock::new(Vec::new()));
-        let tagged_points_vector: Arc<RwLock<Vec<ListPointWithTag<T, 2>>>> = Arc::new(RwLock::new(Vec::new()));
-
-        let n_copies: usize = if periodic { 9 } else { 1 };
-        // Get the number of particles from positions, and consider 9 copies of the system to take into account the PBCs
-        let n_particles = positions.shape()[0];
-        (0..n_copies*n_particles).into_par_iter().for_each(|i| {
-        // for i in 0..9 * n_particles {
-            let index = i % n_particles;
-            let quotient = i / n_particles;
-            let nx = match quotient / 3 {
-                0 => 0.0,
-                1 => -1.0,
-                2 => 1.0,
-                _ => 2.0,
-            };
-            let ny = match quotient % 3 {
-                0 => 0.0,
-                1 => -1.0,
-                2 => 1.0,
-                _ => 2.0,
-            };
-
-            assert!(nx < 2.0 && ny < 2.0, "Unexpected error when cloning boxes.");
-
-            let shifted_x: f64 = positions[[index, 0]] + nx * box_size_x;
-            let shifted_y: f64 = positions[[index, 1]] + ny * box_size_y;
-
-            let is_in_x = shifted_x >= -0.5 * box_size_x && shifted_x <= 1.5 * box_size_x;
-            let is_in_y = shifted_y >= -0.5 * box_size_y && shifted_y <= 1.5 * box_size_y;
-
-            if is_in_x && is_in_y {
-
-                // let newpoint: Point2<f64> = Point2::new(shifted_x, shifted_y);
-                let newpoint = [shifted_x, shifted_y];
-                let new_tagged_point = ListPointWithTag::new(newpoint, field[[index]]);
-
-                // points_vector.push(newpoint);
-                tagged_points_vector.write().unwrap().push(new_tagged_point);
-            }
-        // }
-        });
-
-        //Bulk-load the vector into a new rtree, then return it
-        // It's apparently better? http://ftp.informatik.rwth-aachen.de/Publications/CEUR-WS/Vol-74/files/FORUM_18.pdf
-        let rtree = RTree::bulk_load(tagged_points_vector.read().unwrap().to_vec());
-
-        rtree
-    }
-    
-    
-    pub fn compute_decorated_rstar_tree_3d<T: Display + Send + Sync + Copy>(
-        positions: &ArrayViewD<'_, f64>,
-        field: &ArrayView1<'_, T>, // Assumed scalar for now
-        box_size_x: f64,
-        box_size_y: f64,
-        box_size_z: f64,
-        periodic: bool
-    ) -> RTree<ListPointWithTag<T, 3>> {
-
-
-        // Create an empty for the vector of points to load into the tree
-        // let mut points_vector: Vec<Point2<f64>> = Vec::new();
-        // let mut points_vector: Arc<RwLock<Vec<Point3<f64>>>> = Arc::new(RwLock::new(Vec::new()));
-        let tagged_points_vector: Arc<RwLock<Vec<ListPointWithTag<T,3>>>> = Arc::new(RwLock::new(Vec::new()));
-
-        // Get the number of particles from positions, and consider 27 copies of the system to take into account the PBCs
-        let n_copies: usize = if periodic { 27 } else { 1 };
-        let n_particles = positions.shape()[0];
-        (0..n_copies*n_particles).into_par_iter().for_each(|i| {
-
-            let index = i % n_particles;
-            let quotient = i / n_particles;
-            let triplet_1 = quotient % 3;
-            let nonuplet = quotient / 3;
-            let triplet_2 = nonuplet % 3;
-            let triplet_3 = nonuplet / 3;
-
-            let nx = match triplet_1 {
-                0 => 0.0,
-                1 => -1.0,
-                2 => 1.0,
-                _ => 2.0,
-            };
-            let ny = match triplet_2 {
-                0 => 0.0,
-                1 => -1.0,
-                2 => 1.0,
-                _ => 2.0,
-            };
-            let nz = match triplet_3 {
-                0 => 0.0,
-                1 => -1.0,
-                2 => 1.0,
-                _ => 2.0,
-            };
-
-            assert!(nx < 2.0 && ny < 2.0 && nz < 2.0, "Unexpected error when cloning boxes.");
-
-            let shifted_x: f64 = positions[[index, 0]] + nx * box_size_x;
-            let shifted_y: f64 = positions[[index, 1]] + ny * box_size_y;
-            let shifted_z: f64 = positions[[index, 2]] + nz * box_size_z;
-
-            let is_in_x = shifted_x >= -0.5 * box_size_x && shifted_x <= 1.5 * box_size_x;
-            let is_in_y = shifted_y >= -0.5 * box_size_y && shifted_y <= 1.5 * box_size_y;
-            let is_in_z = shifted_z >= -0.5 * box_size_z && shifted_z <= 1.5 * box_size_z;
-
-            if is_in_x && is_in_y && is_in_z {
-
-                // let newpoint: Point3<f64> = Point3::new(shifted_x, shifted_y, shifted_z);
-                let newpoint = [shifted_x, shifted_y, shifted_z];
-                let new_tagged_point = ListPointWithTag::new(newpoint, field[[index]]);
-
-                // points_vector.push(newpoint);
-                tagged_points_vector.write().unwrap().push(new_tagged_point);
-            }
-        // }
-        });
-
-        //Bulk-load the vector into a new rtree, then return it
-        // It's apparently better? http://ftp.informatik.rwth-aachen.de/Publications/CEUR-WS/Vol-74/files/FORUM_18.pdf
-        let rtree = RTree::bulk_load(tagged_points_vector.read().unwrap().to_vec());
-
-        rtree
-    }
-    
 }
