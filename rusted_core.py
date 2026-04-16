@@ -265,6 +265,7 @@ def main(input_file,
                 
         if pcf:
             if gyromorphic_cf:
+                pcf_suffix = '_gyro'+str(orientation_order)
                 vector_rdf, vector_orientation = rust.compute_vector_gyromorphic_corr_2d(points, boxsize, binsize, periodic, orientation_order)
                 vector_orientation = np.sum(vector_orientation**2,axis=-1)
             else:
