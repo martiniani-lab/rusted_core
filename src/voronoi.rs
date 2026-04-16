@@ -13,8 +13,12 @@ extern crate geo;
 use geo::algorithm::area::Area;
 use geo::{LineString, Polygon};
 
-use crate::geometry::ensure_periodicity;
-use crate::spatial::create_delaunay;
+use crate::geometry::{
+    ensure_periodicity,
+    euclidean_from_spherical,
+    tangent_frame,
+};
+use crate::spatial::{create_delaunay, create_delaunay_sphere};
 
 pub fn compute_steinhardt_boops_2d(
     points_array: &ArrayViewD<'_, f64>,
@@ -70,6 +74,76 @@ pub fn compute_steinhardt_boops_2d(
 
                     boops_i[[n, 0]] += dpsinx;
                     boops_i[[n, 1]] += dpsiny;
+                }
+            }
+
+            for n in 0..boop_orders_number {
+                boops_i[[n, 0]] /= neighbour_count as f64;
+                boops_i[[n, 1]] /= neighbour_count as f64;
+            }
+        });
+
+    return boop_vectors;
+}
+
+pub fn compute_steinhardt_boops_2sphere(
+    points_array: &ArrayViewD<'_, f64>,   // (N, 2) in theta, phi
+    boop_order_array: &ArrayViewD<'_, isize>,
+) -> Array<f64, Dim<[usize; 3]>> {
+    let n_particles = points_array.shape()[0];
+    let boop_orders_number = boop_order_array.shape()[0];
+
+    // Convert to Cartesian (on the unit sphere) for angle computation
+    let cartesian = euclidean_from_spherical(points_array);
+
+    // Build the spherical Delaunay via stereographic projection
+    let delaunay = create_delaunay_sphere(&cartesian);
+
+    let mut boop_vectors = Array::<f64, _>::zeros((n_particles, boop_orders_number, 2).f());
+
+    boop_vectors
+        .axis_iter_mut(Axis(0))
+        .into_par_iter()
+        .enumerate()
+        .for_each(|(i, mut boops_i)| {
+            let fixed_handle = FixedHandleImpl::from_index(i);
+            let dynamic_handle = delaunay.vertex(fixed_handle);
+            let outgoing_edges = dynamic_handle.out_edges();
+
+            let mut neighbour_count = 0;
+
+            // Current point in Cartesian (= outward unit normal)
+            let ni = [cartesian[[i, 0]], cartesian[[i, 1]], cartesian[[i, 2]]];
+
+            // Local tangent frame at point i
+            let (e1, e2) = tangent_frame(&ni);
+
+            for e in outgoing_edges {
+                neighbour_count += 1;
+
+                // Neighbor's particle index (stored as tag in the Delaunay vertex)
+                let j = e.to().data().tag;
+
+                // Neighbor's Cartesian coordinates
+                let xj = [cartesian[[j, 0]], cartesian[[j, 1]], cartesian[[j, 2]]];
+
+                // Geodesic direction from i to j: project xj onto the tangent plane at i
+                let dot = xj[0]*ni[0] + xj[1]*ni[1] + xj[2]*ni[2];
+                let dx = xj[0] - dot * ni[0];
+                let dy = xj[1] - dot * ni[1];
+                let dz = xj[2] - dot * ni[2];
+
+                // Bond angle in local frame
+                let comp1 = dx*e1[0] + dy*e1[1] + dz*e1[2];
+                let comp2 = dx*e2[0] + dy*e2[1] + dz*e2[2];
+                let theta = atan2(comp2, comp1);
+
+                for n in 0..boop_orders_number {
+                    let order = boop_order_array[[n]] as f64;
+                    let angle = order * theta;
+
+                    boops_i[[n, 0]] += angle.cos();
+                    boops_i[[n, 1]] += angle.sin();
                 }
             }
 

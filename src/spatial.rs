@@ -8,9 +8,12 @@ use spade::{DelaunayTriangulation, Point2};
 
 use rstar::{RTree, primitives::GeomWithData};
 
+use ndarray::{Array, Dim};
+
 use crate::geometry::{
     PointWithTag, ListPointWithTag,
     euclidean_from_spherical_single_point, great_circle_distance,
+    find_stereographic_pole, stereographic_project,
 };
 
 pub fn compute_periodic_rstar_tree(
@@ -377,6 +380,33 @@ pub fn create_delaunay(points_array: &ArrayViewD<'_, f64>, periodic: bool, box_l
     let delaunay = DelaunayTriangulation::<Point2<f64>>::bulk_load_stable(points).unwrap();
 
     return delaunay;
+}
+
+/// Build a Delaunay triangulation on the 2-sphere via stereographic projection.
+/// Takes Cartesian coordinates (N×3, points on the unit sphere).
+/// Each vertex carries a tag equal to its particle index so that the original
+/// coordinates can be looked up from the triangulation.
+pub fn create_delaunay_sphere(
+    cartesian_points: &Array<f64, Dim<[usize; 2]>>
+) -> DelaunayTriangulation<PointWithTag<usize>> {
+    let n_particles = cartesian_points.shape()[0];
+
+    // Choose the projection pole farthest from the data
+    let pole = find_stereographic_pole(cartesian_points);
+
+    // Project all points to the plane
+    let projected = stereographic_project(cartesian_points, &pole);
+
+    // Build tagged Point2 vector — tag = particle index
+    let points: Vec<PointWithTag<usize>> = (0..n_particles)
+        .map(|i| PointWithTag {
+            position: Point2::new(projected[i][0], projected[i][1]),
+            tag: i,
+        })
+        .collect();
+
+    // bulk_load_stable preserves ordering: vertex index i = particle i
+    DelaunayTriangulation::<PointWithTag<usize>>::bulk_load_stable(points).unwrap()
 }
 
 pub fn count_points_in_disk(rtree: &RTree<[f64;2]>, r_center: Vec<f64>, radius: f64) -> usize {

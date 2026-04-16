@@ -292,6 +292,18 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     #[pyfn(m)]
+    fn compute_2sphere_boops<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        orders: &Bound<'py, PyArrayDyn<isize>>,
+    ) -> Bound<'py, PyArray<f64, Dim<[usize; 3]>>> {
+        let array = unsafe { points.as_array() };
+        let boop_order_array = unsafe { orders.as_array() };
+        let boops = voronoi::compute_steinhardt_boops_2sphere(&array, &boop_order_array);
+        PyArray::from_array(py, &boops)
+    }
+
+    #[pyfn(m)]
     fn compute_2d_all_voronoi_quantities<'py>(
         py: Python<'py>,
         points: &Bound<'py, PyArrayDyn<f64>>,

@@ -2,6 +2,7 @@ use ang::atan2;
 use numpy::ndarray::ArrayViewD;
 use ndarray::parallel::prelude::*;
 use ndarray::{Array, Axis, Dim};
+use rand::RngExt;
 use std::f64::consts::PI;
 use std::fmt::{Display, Formatter, Result};
 
@@ -145,6 +146,145 @@ pub fn euclidean_from_spherical(points: &ArrayViewD<'_, f64>) -> Array<f64, Dim<
 pub fn euclidean_from_spherical_single_point(theta: f64, phi: f64) -> [f64; 3] {
     let sin_theta = theta.sin();
     [sin_theta * phi.cos(), sin_theta * phi.sin(), theta.cos() ]
+}
+
+// Stereographic projection utilities
+
+/// Construct an orthonormal frame for the tangent plane at a point on the unit sphere.
+/// Given a unit normal vector n, returns (e1, e2) such that (e1, e2, n) form a right-handed frame.
+pub fn tangent_frame(n: &[f64; 3]) -> ([f64; 3], [f64; 3]) {
+    // Pick a vector not parallel to n
+    let v = if n[0].abs() < 0.9 {
+        [1.0, 0.0, 0.0]
+    } else {
+        [0.0, 1.0, 0.0]
+    };
+
+    // e1 = normalize(v - (v·n)n)  (Gram-Schmidt)
+    let dot = v[0] * n[0] + v[1] * n[1] + v[2] * n[2];
+    let e1_raw = [v[0] - dot * n[0], v[1] - dot * n[1], v[2] - dot * n[2]];
+    let e1_norm = (e1_raw[0]*e1_raw[0] + e1_raw[1]*e1_raw[1] + e1_raw[2]*e1_raw[2]).sqrt();
+    let e1 = [e1_raw[0]/e1_norm, e1_raw[1]/e1_norm, e1_raw[2]/e1_norm];
+
+    // e2 = n × e1
+    let e2 = [
+        n[1] * e1[2] - n[2] * e1[1],
+        n[2] * e1[0] - n[0] * e1[2],
+        n[0] * e1[1] - n[1] * e1[0],
+    ];
+
+    (e1, e2)
+}
+
+/// Find the best stereographic projection pole for points on the unit sphere.
+/// Returns the pole (unit vector) that is farthest from all data points.
+/// Strategy: use the antipode of the centroid when it is well-defined, otherwise
+/// draw random candidate poles and keep the one whose closest data point is farthest.
+pub fn find_stereographic_pole(cartesian_points: &Array<f64, Dim<[usize; 2]>>) -> [f64; 3] {
+    let n = cartesian_points.shape()[0];
+
+    // Compute centroid of Cartesian positions
+    let mut cx = 0.0_f64;
+    let mut cy = 0.0_f64;
+    let mut cz = 0.0_f64;
+    for i in 0..n {
+        cx += cartesian_points[[i, 0]];
+        cy += cartesian_points[[i, 1]];
+        cz += cartesian_points[[i, 2]];
+    }
+    cx /= n as f64;
+    cy /= n as f64;
+    cz /= n as f64;
+
+    let norm = (cx*cx + cy*cy + cz*cz).sqrt();
+
+    if norm > 0.01 {
+        // Centroid is well-defined — use its antipode
+        let pole = [-cx/norm, -cy/norm, -cz/norm];
+        // Check that no data point is too close (dot > 0.9999 means < 0.8°)
+        let mut max_dot = -1.0_f64;
+        for i in 0..n {
+            let dot = cartesian_points[[i, 0]] * pole[0]
+                    + cartesian_points[[i, 1]] * pole[1]
+                    + cartesian_points[[i, 2]] * pole[2];
+            if dot > max_dot { max_dot = dot; }
+        }
+        if max_dot < 0.9999 {
+            return pole;
+        }
+    }
+
+    // Centroid is near origin or its antipode is too close to a data point.
+    // Draw random candidate poles and keep the best one.
+    let mut rng = rand::rng();
+    let n_candidates = 100;
+    let mut best_pole = [0.0, 0.0, 1.0];
+    let mut best_max_dot = 1.0_f64;
+
+    for _ in 0..n_candidates {
+        // Uniform random point on the sphere (Marsaglia's method)
+        let mut u: f64;
+        let mut v: f64;
+        let mut s: f64;
+        loop {
+            u = 2.0 * rng.random::<f64>() - 1.0;
+            v = 2.0 * rng.random::<f64>() - 1.0;
+            s = u*u + v*v;
+            if s < 1.0 { break; }
+        }
+        let factor = 2.0 * (1.0 - s).sqrt();
+        let candidate = [u * factor, v * factor, 1.0 - 2.0 * s];
+
+        let mut max_dot = -1.0_f64;
+        for i in 0..n {
+            let dot = cartesian_points[[i, 0]] * candidate[0]
+                    + cartesian_points[[i, 1]] * candidate[1]
+                    + cartesian_points[[i, 2]] * candidate[2];
+            if dot > max_dot { max_dot = dot; }
+        }
+        if max_dot < best_max_dot {
+            best_max_dot = max_dot;
+            best_pole = candidate;
+        }
+    }
+
+    best_pole
+}
+
+/// Stereographic projection from a given pole onto the plane through the origin
+/// perpendicular to that pole. Maps 3D Cartesian points on the unit sphere to 2D.
+pub fn stereographic_project(
+    cartesian_points: &Array<f64, Dim<[usize; 2]>>,
+    pole: &[f64; 3]
+) -> Vec<[f64; 2]> {
+    let n = cartesian_points.shape()[0];
+
+    // Orthonormal basis for the projection plane
+    let (e1, e2) = tangent_frame(pole);
+
+    let mut projected = Vec::with_capacity(n);
+
+    for i in 0..n {
+        let x = cartesian_points[[i, 0]];
+        let y = cartesian_points[[i, 1]];
+        let z = cartesian_points[[i, 2]];
+
+        let dot = x * pole[0] + y * pole[1] + z * pole[2]; // x · p
+        let denom = 1.0 - dot; // 1 - x·p
+
+        // Projected 3D vector in the plane: x' = (x - (x·p)p) / (1 - x·p)
+        let xp = (x - dot * pole[0]) / denom;
+        let yp = (y - dot * pole[1]) / denom;
+        let zp = (z - dot * pole[2]) / denom;
+
+        // Decompose in the plane basis
+        let u = xp * e1[0] + yp * e1[1] + zp * e1[2];
+        let v = xp * e2[0] + yp * e2[1] + zp * e2[2];
+
+        projected.push([u, v]);
+    }
+
+    projected
 }
 
 // Types
