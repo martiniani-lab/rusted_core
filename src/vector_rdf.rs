@@ -610,6 +610,86 @@ pub fn compute_nnbounded_vector_rdf_3d(
     return rdf_vector;
 }
 
+pub fn compute_pnn_vector_rdf_3d(
+    points: &ArrayViewD<'_, f64>,
+    box_size_x: f64,
+    box_size_y: f64,
+    box_size_z: f64,
+    binsize: f64,
+    nn_order: usize,
+    periodic: bool,
+) -> Array<f64, Dim<[usize; 3]>> {
+    // Check that the binsize is physical
+    assert!(
+        binsize > 0.0,
+        "Something is wrong with the binsize used for the RDF"
+    );
+
+    let n_particles = points.shape()[0];
+
+    let radial_bound = if periodic {
+        hypot(hypot(box_size_x / 2.0, box_size_y / 2.0), box_size_z / 2.0)
+    } else {
+        hypot(hypot(box_size_x, box_size_y), box_size_z)
+    };
+
+    let nbins = (2.0 * radial_bound / binsize).ceil() as usize;
+    let box_lengths = vec![box_size_x, box_size_y, box_size_z];
+
+    let rdf: Vec<Vec<Vec<Arc<RwLock<f64>>>>> =
+        vec_no_clone![vec_no_clone![vec_no_clone![Arc::new(RwLock::new(0.0)); nbins]; nbins]; nbins];
+
+    // Construct an rtree here
+    let rtree_positions = compute_periodic_rstar_tree_3d(
+        &points, box_lengths[0], box_lengths[1], box_lengths[2], periodic
+    );
+
+    (0..n_particles).into_par_iter().for_each(|current_index| {
+
+        // skip(1) skips self, then .nth(nn_order - 1) advances to the nn_order-th NN
+        let mut neighbor_iter = rtree_positions.nearest_neighbor_iter(
+            &[points[[current_index,0]], points[[current_index,1]], points[[current_index, 2]]]
+        ).skip(nn_order);
+
+        let neighbor = neighbor_iter.next().unwrap();
+        let mut r_ij = vec![
+            neighbor[0] - points[[current_index,0]],
+            neighbor[1] - points[[current_index,1]],
+            neighbor[2] - points[[current_index, 2]]
+        ];
+        if periodic {
+            ensure_periodicity(&mut r_ij, &box_lengths);
+        }
+
+        // determine the relevant bin, and update the count at that bin
+        let index_x = ((r_ij[0] + radial_bound) / binsize).floor() as usize;
+        let index_y = ((r_ij[1] + radial_bound) / binsize).floor() as usize;
+        let index_z = ((r_ij[2] + radial_bound) / binsize).floor() as usize;
+
+        assert!(index_x < nbins);
+        assert!(index_y < nbins);
+        assert!(index_z < nbins);
+
+        *(rdf[index_x][index_y][index_z].write().unwrap()) += 1.0;
+
+    });
+
+    // Could make this an array and actually parallelize over all dimensions
+    let mut rdf_vector = Array::<f64, _>::zeros((nbins, nbins, nbins).f());
+    Zip::indexed(&mut rdf_vector).par_for_each(|(i, j, k), rdf_val| {
+        *rdf_val = *rdf
+        .get(i)
+        .unwrap()
+        .get(j)
+        .unwrap()
+        .get(k)
+        .unwrap()
+        .read()
+        .unwrap();
+    });
+
+    return rdf_vector;
+}
 
 pub fn compute_vector_rdf_2sphere(
     points: &ArrayViewD<'_, f64>,

@@ -150,6 +150,21 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     #[pyfn(m)]
+    fn compute_pnn_vector_rdf3d<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        p: usize,
+        box_size: f64,
+        binsize: f64,
+        periodic: bool
+    ) -> Bound<'py, PyArray3<f64>> {
+        let array = unsafe { points.as_array() };
+        assert!(p>0, "Order for pth-nn distribution needs to be natural integer");
+        let result = vector_rdf::compute_pnn_vector_rdf_3d(&array, box_size, box_size, box_size, binsize, p, periodic);
+        PyArray3::from_array(py, &result)
+    }
+
+    #[pyfn(m)]
     fn compute_vector_gyromorphic_corr_2d<'py>(
         py: Python<'py>,
         points: Bound<'py, PyArrayDyn<f64>>,
