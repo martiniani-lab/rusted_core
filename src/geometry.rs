@@ -287,6 +287,25 @@ pub fn stereographic_project(
     projected
 }
 
+/// Area of a spherical triangle with vertices a, b, c on the unit sphere.
+/// Uses the Van Oosterom–Strackee formula for the solid angle.
+/// See https://ieeexplore.ieee.org/document/4121581
+pub fn spherical_triangle_area(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3]) -> f64 {
+    // numerator = a · (b × c)
+    let cross = [
+        b[1]*c[2] - b[2]*c[1],
+        b[2]*c[0] - b[0]*c[2],
+        b[0]*c[1] - b[1]*c[0],
+    ];
+    let numerator = a[0]*cross[0] + a[1]*cross[1] + a[2]*cross[2];
+    let ab = a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+    let bc = b[0]*c[0] + b[1]*c[1] + b[2]*c[2];
+    let ca = c[0]*a[0] + c[1]*a[1] + c[2]*a[2];
+    let denominator = 1.0 + ab + bc + ca;
+
+    2.0 * numerator.atan2(denominator).abs()
+}
+
 // Types
 
 pub struct PointWithTag<T> {

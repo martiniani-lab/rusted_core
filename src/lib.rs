@@ -304,6 +304,21 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     #[pyfn(m)]
+    fn compute_2sphere_all_voronoi_quantities<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+    ) -> (Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<usize>>, Bound<'py, PyArray1<f64>> ) {
+        let array = unsafe { points.as_array() };
+        let (areas, neighbour_counts, nn_distances) = voronoi::compute_voronoi_quantities_2sphere(
+            &array, true, true, true
+        );
+        let array_areas = PyArray1::from_vec(py, areas.unwrap());
+        let array_neighbour_counts = PyArray1::from_vec(py, neighbour_counts.unwrap());
+        let array_nn_distances = PyArray1::from_vec(py, nn_distances.unwrap());
+        (array_areas, array_neighbour_counts, array_nn_distances)
+    }
+
+    #[pyfn(m)]
     fn compute_2d_all_voronoi_quantities<'py>(
         py: Python<'py>,
         points: &Bound<'py, PyArrayDyn<f64>>,

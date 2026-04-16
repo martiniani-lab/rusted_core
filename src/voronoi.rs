@@ -17,6 +17,11 @@ use crate::geometry::{
     ensure_periodicity,
     euclidean_from_spherical,
     tangent_frame,
+    find_stereographic_pole,
+    stereographic_project,
+    spherical_triangle_area,
+    great_circle_distance,
+    PointWithTag,
 };
 use crate::spatial::{create_delaunay, create_delaunay_sphere};
 
@@ -154,6 +159,131 @@ pub fn compute_steinhardt_boops_2sphere(
         });
 
     return boop_vectors;
+}
+
+pub fn compute_voronoi_quantities_2sphere(
+    points_array: &ArrayViewD<'_, f64>,   // (N, 2) in theta, phi
+    voronoi_areas: bool,
+    voronoi_neighbour_count: bool,
+    voronoi_nn_distance: bool,
+) -> (Option<Vec<f64>>, Option<Vec<usize>>, Option<Vec<f64>>) {
+    let n_particles = points_array.shape()[0];
+
+    // Convert to Cartesian
+    let cartesian = euclidean_from_spherical(points_array);
+
+    // Set up the stereographic projection and build Delaunay
+    let pole = find_stereographic_pole(&cartesian);
+    let projected = stereographic_project(&cartesian, &pole);
+
+    let points: Vec<PointWithTag<usize>> = (0..n_particles)
+        .map(|i| PointWithTag {
+            position: Point2::new(projected[i][0], projected[i][1]),
+            tag: i,
+        })
+        .collect();
+    let delaunay = DelaunayTriangulation::<PointWithTag<usize>>::bulk_load_stable(points).unwrap();
+
+    let mut areas_vector = vec![0.0; n_particles];
+    let mut neighbour_counts_vector: Vec<usize> = vec![0; n_particles];
+    let mut nn_distances_vector = vec![0.0; n_particles];
+
+    if voronoi_areas {
+        areas_vector.par_iter_mut().enumerate().for_each(|(i, area_i)| {
+            let fixed_handle = FixedHandleImpl::from_index(i);
+            let dynamic_handle = delaunay.vertex(fixed_handle);
+
+            // Collect spherical circumcenters of adjacent Delaunay faces.
+            // out_edges() returns edges in cyclic order, so the circumcenters
+            // are already in the correct winding order around the Voronoi cell.
+            let pi = [cartesian[[i, 0]], cartesian[[i, 1]], cartesian[[i, 2]]];
+            let mut circumcenters: Vec<[f64; 3]> = Vec::new();
+
+            for edge in dynamic_handle.out_edges() {
+                let face = edge.face();
+                if let Some(inner_face) = face.as_inner() {
+                    let [v0, v1, v2] = inner_face.vertices();
+                    let i0 = v0.data().tag;
+                    let i1 = v1.data().tag;
+                    let i2 = v2.data().tag;
+                    let a = [cartesian[[i0, 0]], cartesian[[i0, 1]], cartesian[[i0, 2]]];
+                    let b = [cartesian[[i1, 0]], cartesian[[i1, 1]], cartesian[[i1, 2]]];
+                    let c = [cartesian[[i2, 0]], cartesian[[i2, 1]], cartesian[[i2, 2]]];
+
+                    // Spherical circumcenter = normalize(A×B + B×C + C×A)
+                    let ab = [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+                    let bc = [b[1]*c[2]-b[2]*c[1], b[2]*c[0]-b[0]*c[2], b[0]*c[1]-b[1]*c[0]];
+                    let ca = [c[1]*a[2]-c[2]*a[1], c[2]*a[0]-c[0]*a[2], c[0]*a[1]-c[1]*a[0]];
+                    let raw = [ab[0]+bc[0]+ca[0], ab[1]+bc[1]+ca[1], ab[2]+bc[2]+ca[2]];
+                    let norm = (raw[0]*raw[0] + raw[1]*raw[1] + raw[2]*raw[2]).sqrt();
+                    let mut cc = [raw[0]/norm, raw[1]/norm, raw[2]/norm];
+
+                    // Pick the circumcenter on the same side as the triangle (not the antipodal one)
+                    let centroid = [a[0]+b[0]+c[0], a[1]+b[1]+c[1], a[2]+b[2]+c[2]];
+                    if cc[0]*centroid[0] + cc[1]*centroid[1] + cc[2]*centroid[2] < 0.0 {
+                        cc = [-cc[0], -cc[1], -cc[2]];
+                    }
+
+                    circumcenters.push(cc);
+                } else {
+                    // Outer face: the Voronoi vertex is at infinity in the plane,
+                    // which maps to the projection pole on the sphere
+                    circumcenters.push(pole);
+                }
+            }
+
+            // Area = sum of spherical triangle areas in a fan from the particle
+            // to consecutive circumcenters (already in cyclic order from out_edges)
+            let n_verts = circumcenters.len();
+            let mut cell_area = 0.0;
+            for k in 0..n_verts {
+                let v1 = &circumcenters[k];
+                let v2 = &circumcenters[(k + 1) % n_verts];
+                cell_area += spherical_triangle_area(&pi, v1, v2);
+            }
+            *area_i = cell_area;
+        });
+    }
+
+    if voronoi_neighbour_count {
+        neighbour_counts_vector.par_iter_mut().enumerate().for_each(|(i, count_i)| {
+            let fixed_handle = FixedHandleImpl::from_index(i);
+            let dynamic_handle = delaunay.vertex(fixed_handle);
+            for _e in dynamic_handle.out_edges() {
+                *count_i += 1;
+            }
+        });
+    }
+
+    if voronoi_nn_distance {
+        nn_distances_vector.par_iter_mut().enumerate().for_each(|(i, distance_i)| {
+            let fixed_handle = FixedHandleImpl::from_index(i);
+            let dynamic_handle = delaunay.vertex(fixed_handle);
+
+            let theta_i = points_array[[i, 0]];
+            let phi_i = points_array[[i, 1]];
+            let pi_sph = [theta_i, phi_i];
+
+            let mut nn_distance = INFINITY;
+
+            for e in dynamic_handle.out_edges() {
+                let j = e.to().data().tag;
+                let pj_sph = [points_array[[j, 0]], points_array[[j, 1]]];
+                let dist = great_circle_distance(&pi_sph, &pj_sph);
+                if dist < nn_distance {
+                    nn_distance = dist;
+                }
+            }
+
+            *distance_i = nn_distance;
+        });
+    }
+
+    let output_areas = if voronoi_areas { Some(areas_vector) } else { None };
+    let output_counts = if voronoi_neighbour_count { Some(neighbour_counts_vector) } else { None };
+    let output_distances = if voronoi_nn_distance { Some(nn_distances_vector) } else { None };
+
+    (output_areas, output_counts, output_distances)
 }
 
 pub fn compute_voronoi_quantities_2d(
