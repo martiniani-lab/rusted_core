@@ -386,9 +386,10 @@ pub fn create_delaunay(points_array: &ArrayViewD<'_, f64>, periodic: bool, box_l
 /// Takes Cartesian coordinates (N×3, points on the unit sphere).
 /// Each vertex carries a tag equal to its particle index so that the original
 /// coordinates can be looked up from the triangulation.
+/// Returns (delaunay, pole) so callers can use the pole's Cartesian coordinates.
 pub fn create_delaunay_sphere(
     cartesian_points: &Array<f64, Dim<[usize; 2]>>
-) -> DelaunayTriangulation<PointWithTag<usize>> {
+) -> (DelaunayTriangulation<PointWithTag<usize>>, [f64; 3]) {
     let n_particles = cartesian_points.shape()[0];
 
     // Choose the projection pole farthest from the data
@@ -398,15 +399,27 @@ pub fn create_delaunay_sphere(
     let projected = stereographic_project(cartesian_points, &pole);
 
     // Build tagged Point2 vector — tag = particle index
-    let points: Vec<PointWithTag<usize>> = (0..n_particles)
+    let mut points: Vec<PointWithTag<usize>> = (0..n_particles)
         .map(|i| PointWithTag {
             position: Point2::new(projected[i][0], projected[i][1]),
             tag: i,
         })
         .collect();
 
-    // bulk_load_stable preserves ordering: vertex index i = particle i
-    DelaunayTriangulation::<PointWithTag<usize>>::bulk_load_stable(points).unwrap()
+    // Add the pole as vertex N so all Delaunay faces become inner faces.
+    // The pole projects to infinity; a large finite proxy ensures correct topology.
+    // Callers must use the pole's real Cartesian coords for circumcenter calculations.
+    let max_r2 = projected.iter()
+        .map(|p| p[0]*p[0] + p[1]*p[1])
+        .fold(0.0_f64, f64::max);
+    let pole_proxy_r = 1e6 * max_r2.sqrt().max(1.0);
+    points.push(PointWithTag {
+        position: Point2::new(pole_proxy_r, 0.0),
+        tag: n_particles,
+    });
+
+    // bulk_load_stable preserves ordering: vertex index i = particle i, index N = pole
+    (DelaunayTriangulation::<PointWithTag<usize>>::bulk_load_stable(points).unwrap(), pole)
 }
 
 pub fn count_points_in_disk(rtree: &RTree<[f64;2]>, r_center: Vec<f64>, radius: f64) -> usize {

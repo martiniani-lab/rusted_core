@@ -390,6 +390,48 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     #[pyfn(m)]
+    fn voronoi_tessellation_2d<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        box_size: f64,
+        periodic: bool,
+    ) -> (Bound<'py, PyArray<f64, Dim<[usize; 2]>>>, Bound<'py, PyArray<usize, Dim<[usize; 2]>>>, Bound<'py, PyArray1<usize>>, Bound<'py, PyArray1<usize>>) {
+        let array = unsafe { points.as_array() };
+        let (verts_flat, edges_flat, cell_indices, cell_offsets) =
+            voronoi::voronoi_tessellation_2d(&array, box_size, box_size, periodic);
+        let n_verts = verts_flat.len() / 2;
+        let n_edges = edges_flat.len() / 2;
+        let verts_array = Array::from_shape_vec((n_verts, 2), verts_flat).unwrap();
+        let edges_array = Array::from_shape_vec((n_edges, 2), edges_flat).unwrap();
+        (
+            PyArray::from_owned_array(py, verts_array),
+            PyArray::from_owned_array(py, edges_array),
+            PyArray1::from_vec(py, cell_indices),
+            PyArray1::from_vec(py, cell_offsets),
+        )
+    }
+
+    #[pyfn(m)]
+    fn voronoi_tessellation_2sphere<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+    ) -> (Bound<'py, PyArray<f64, Dim<[usize; 2]>>>, Bound<'py, PyArray<usize, Dim<[usize; 2]>>>, Bound<'py, PyArray1<usize>>, Bound<'py, PyArray1<usize>>) {
+        let array = unsafe { points.as_array() };
+        let (verts_flat, edges_flat, cell_indices, cell_offsets) =
+            voronoi::voronoi_tessellation_2sphere(&array);
+        let n_verts = verts_flat.len() / 3;
+        let n_edges = edges_flat.len() / 2;
+        let verts_array = Array::from_shape_vec((n_verts, 3), verts_flat).unwrap();
+        let edges_array = Array::from_shape_vec((n_edges, 2), edges_flat).unwrap();
+        (
+            PyArray::from_owned_array(py, verts_array),
+            PyArray::from_owned_array(py, edges_array),
+            PyArray1::from_vec(py, cell_indices),
+            PyArray1::from_vec(py, cell_offsets),
+        )
+    }
+
+    #[pyfn(m)]
     fn compute_pnn_distances<'py>(
         py: Python<'py>,
         points: &Bound<'py, PyArrayDyn<f64>>,

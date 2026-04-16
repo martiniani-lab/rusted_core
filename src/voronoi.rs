@@ -3,6 +3,7 @@ use libm::hypot;
 use ndarray::parallel::prelude::*;
 use ndarray::{Array, Axis, Dim, ShapeBuilder};
 use numpy::ndarray::ArrayViewD;
+use std::collections::HashMap;
 use std::f64::INFINITY;
 
 extern crate spade;
@@ -17,11 +18,9 @@ use crate::geometry::{
     ensure_periodicity,
     euclidean_from_spherical,
     tangent_frame,
-    find_stereographic_pole,
-    stereographic_project,
     spherical_triangle_area,
+    spherical_circumcenter,
     great_circle_distance,
-    PointWithTag,
 };
 use crate::spatial::{create_delaunay, create_delaunay_sphere};
 
@@ -102,7 +101,7 @@ pub fn compute_steinhardt_boops_2sphere(
     let cartesian = euclidean_from_spherical(points_array);
 
     // Build the spherical Delaunay via stereographic projection
-    let delaunay = create_delaunay_sphere(&cartesian);
+    let (delaunay, _) = create_delaunay_sphere(&cartesian);
 
     let mut boop_vectors = Array::<f64, _>::zeros((n_particles, boop_orders_number, 2).f());
 
@@ -124,10 +123,13 @@ pub fn compute_steinhardt_boops_2sphere(
             let (e1, e2) = tangent_frame(&ni);
 
             for e in outgoing_edges {
-                neighbour_count += 1;
-
                 // Neighbor's particle index (stored as tag in the Delaunay vertex)
                 let j = e.to().data().tag;
+
+                // Skip the pole vertex (tag == n_particles)
+                if j == n_particles { continue; }
+
+                neighbour_count += 1;
 
                 // Neighbor's Cartesian coordinates
                 let xj = [cartesian[[j, 0]], cartesian[[j, 1]], cartesian[[j, 2]]];
@@ -169,20 +171,16 @@ pub fn compute_voronoi_quantities_2sphere(
 ) -> (Option<Vec<f64>>, Option<Vec<usize>>, Option<Vec<f64>>) {
     let n_particles = points_array.shape()[0];
 
-    // Convert to Cartesian
+    // Convert to Cartesian and build Delaunay (pole added as vertex N)
     let cartesian = euclidean_from_spherical(points_array);
+    let (delaunay, pole) = create_delaunay_sphere(&cartesian);
 
-    // Set up the stereographic projection and build Delaunay
-    let pole = find_stereographic_pole(&cartesian);
-    let projected = stereographic_project(&cartesian, &pole);
-
-    let points: Vec<PointWithTag<usize>> = (0..n_particles)
-        .map(|i| PointWithTag {
-            position: Point2::new(projected[i][0], projected[i][1]),
-            tag: i,
-        })
-        .collect();
-    let delaunay = DelaunayTriangulation::<PointWithTag<usize>>::bulk_load_stable(points).unwrap();
+    // Extended Cartesian: index 0..N-1 are particles, index N is the pole
+    let mut ce = Vec::with_capacity((n_particles + 1) * 3);
+    for i in 0..n_particles {
+        ce.push(cartesian[[i, 0]]); ce.push(cartesian[[i, 1]]); ce.push(cartesian[[i, 2]]);
+    }
+    ce.push(pole[0]); ce.push(pole[1]); ce.push(pole[2]);
 
     let mut areas_vector = vec![0.0; n_particles];
     let mut neighbour_counts_vector: Vec<usize> = vec![0; n_particles];
@@ -193,47 +191,21 @@ pub fn compute_voronoi_quantities_2sphere(
             let fixed_handle = FixedHandleImpl::from_index(i);
             let dynamic_handle = delaunay.vertex(fixed_handle);
 
-            // Collect spherical circumcenters of adjacent Delaunay faces.
-            // out_edges() returns edges in cyclic order, so the circumcenters
-            // are already in the correct winding order around the Voronoi cell.
-            let pi = [cartesian[[i, 0]], cartesian[[i, 1]], cartesian[[i, 2]]];
+            let pi = [ce[i*3], ce[i*3+1], ce[i*3+2]];
             let mut circumcenters: Vec<[f64; 3]> = Vec::new();
 
             for edge in dynamic_handle.out_edges() {
                 let face = edge.face();
                 if let Some(inner_face) = face.as_inner() {
                     let [v0, v1, v2] = inner_face.vertices();
-                    let i0 = v0.data().tag;
-                    let i1 = v1.data().tag;
-                    let i2 = v2.data().tag;
-                    let a = [cartesian[[i0, 0]], cartesian[[i0, 1]], cartesian[[i0, 2]]];
-                    let b = [cartesian[[i1, 0]], cartesian[[i1, 1]], cartesian[[i1, 2]]];
-                    let c = [cartesian[[i2, 0]], cartesian[[i2, 1]], cartesian[[i2, 2]]];
-
-                    // Spherical circumcenter = normalize(A×B + B×C + C×A)
-                    let ab = [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
-                    let bc = [b[1]*c[2]-b[2]*c[1], b[2]*c[0]-b[0]*c[2], b[0]*c[1]-b[1]*c[0]];
-                    let ca = [c[1]*a[2]-c[2]*a[1], c[2]*a[0]-c[0]*a[2], c[0]*a[1]-c[1]*a[0]];
-                    let raw = [ab[0]+bc[0]+ca[0], ab[1]+bc[1]+ca[1], ab[2]+bc[2]+ca[2]];
-                    let norm = (raw[0]*raw[0] + raw[1]*raw[1] + raw[2]*raw[2]).sqrt();
-                    let mut cc = [raw[0]/norm, raw[1]/norm, raw[2]/norm];
-
-                    // Pick the circumcenter on the same side as the triangle (not the antipodal one)
-                    let centroid = [a[0]+b[0]+c[0], a[1]+b[1]+c[1], a[2]+b[2]+c[2]];
-                    if cc[0]*centroid[0] + cc[1]*centroid[1] + cc[2]*centroid[2] < 0.0 {
-                        cc = [-cc[0], -cc[1], -cc[2]];
-                    }
-
-                    circumcenters.push(cc);
-                } else {
-                    // Outer face: the Voronoi vertex is at infinity in the plane,
-                    // which maps to the projection pole on the sphere
-                    circumcenters.push(pole);
+                    let t0 = v0.data().tag; let t1 = v1.data().tag; let t2 = v2.data().tag;
+                    let a = [ce[t0*3], ce[t0*3+1], ce[t0*3+2]];
+                    let b = [ce[t1*3], ce[t1*3+1], ce[t1*3+2]];
+                    let c = [ce[t2*3], ce[t2*3+1], ce[t2*3+2]];
+                    circumcenters.push(spherical_circumcenter(&a, &b, &c));
                 }
             }
 
-            // Area = sum of spherical triangle areas in a fan from the particle
-            // to consecutive circumcenters (already in cyclic order from out_edges)
             let n_verts = circumcenters.len();
             let mut cell_area = 0.0;
             for k in 0..n_verts {
@@ -249,8 +221,8 @@ pub fn compute_voronoi_quantities_2sphere(
         neighbour_counts_vector.par_iter_mut().enumerate().for_each(|(i, count_i)| {
             let fixed_handle = FixedHandleImpl::from_index(i);
             let dynamic_handle = delaunay.vertex(fixed_handle);
-            for _e in dynamic_handle.out_edges() {
-                *count_i += 1;
+            for e in dynamic_handle.out_edges() {
+                if e.to().data().tag != n_particles { *count_i += 1; }
             }
         });
     }
@@ -268,6 +240,7 @@ pub fn compute_voronoi_quantities_2sphere(
 
             for e in dynamic_handle.out_edges() {
                 let j = e.to().data().tag;
+                if j == n_particles { continue; }
                 let pj_sph = [points_array[[j, 0]], points_array[[j, 1]]];
                 let dist = great_circle_distance(&pi_sph, &pj_sph);
                 if dist < nn_distance {
@@ -457,4 +430,171 @@ pub fn voronoi_furthest_site(
         });
 
     return furthest_sites;
+}
+
+/// Return the Voronoi tessellation of a 2D periodic/free point pattern.
+/// Returns (vertices, edges, cell_indices, cell_offsets) where:
+///   vertices:     flat [x0,y0, x1,y1, ...] — all unique Voronoi vertex positions
+///   edges:        flat [i0,j0, i1,j1, ...] — pairs of vertex indices forming edges
+///   cell_indices: flat vertex indices for all cells (CSR values)
+///   cell_offsets: length n_particles+1 (CSR offsets)
+pub fn voronoi_tessellation_2d(
+    points_array: &ArrayViewD<'_, f64>,
+    box_size_x: f64,
+    box_size_y: f64,
+    periodic: bool,
+) -> (Vec<f64>, Vec<usize>, Vec<usize>, Vec<usize>) {
+    let n_particles = points_array.shape()[0];
+    let box_lengths = vec![box_size_x, box_size_y];
+    let delaunay = create_delaunay(points_array, periodic, &box_lengths);
+
+    // Step 1: All Voronoi vertices = circumcenters of inner Delaunay faces
+    let mut all_vertices: Vec<[f64; 2]> = Vec::new();
+    let mut face_idx_to_voro_idx: HashMap<usize, usize> = HashMap::new();
+
+    for face in delaunay.inner_faces() {
+        let cc = face.circumcenter();
+        let voro_idx = all_vertices.len();
+        face_idx_to_voro_idx.insert(face.fix().index(), voro_idx);
+        all_vertices.push([cc.x, cc.y]);
+    }
+
+    // Step 2: All Voronoi edges (process each undirected Delaunay edge once)
+    let mut all_edges: Vec<[usize; 2]> = Vec::new();
+    for edge in delaunay.directed_edges() {
+        let rev = edge.rev();
+        if edge.fix().index() > rev.fix().index() { continue; }
+        let face_left = edge.face();
+        let face_right = rev.face();
+        if let (Some(li), Some(ri)) = (face_left.as_inner(), face_right.as_inner()) {
+            if let (Some(&vi), Some(&vj)) = (
+                face_idx_to_voro_idx.get(&li.fix().index()),
+                face_idx_to_voro_idx.get(&ri.fix().index()),
+            ) {
+                all_edges.push([vi, vj]);
+            }
+        }
+    }
+
+    // Step 3: Per-cell vertex lists (only for the first n_particles vertices)
+    let mut cell_indices_raw: Vec<usize> = Vec::new();
+    let mut cell_offsets: Vec<usize> = vec![0];
+
+    for i in 0..n_particles {
+        let fixed_handle = FixedHandleImpl::from_index(i);
+        let dynamic_handle = delaunay.vertex(fixed_handle);
+        for edge in dynamic_handle.out_edges() {
+            let face = edge.face();
+            if let Some(inner_face) = face.as_inner() {
+                if let Some(&voro_idx) = face_idx_to_voro_idx.get(&inner_face.fix().index()) {
+                    cell_indices_raw.push(voro_idx);
+                }
+            }
+        }
+        cell_offsets.push(cell_indices_raw.len());
+    }
+
+    // Step 4: Compact — keep only vertices/edges referenced by the N cells
+    let mut used: Vec<bool> = vec![false; all_vertices.len()];
+    for &vi in &cell_indices_raw {
+        used[vi] = true;
+    }
+    let mut old_to_new: Vec<usize> = vec![0; all_vertices.len()];
+    let mut compact_vertices: Vec<[f64; 2]> = Vec::new();
+    for (old, &is_used) in used.iter().enumerate() {
+        if is_used {
+            old_to_new[old] = compact_vertices.len();
+            compact_vertices.push(all_vertices[old]);
+        }
+    }
+    let cell_indices: Vec<usize> = cell_indices_raw.iter().map(|&vi| old_to_new[vi]).collect();
+    let compact_edges: Vec<[usize; 2]> = all_edges.iter()
+        .filter(|&&[a, b]| used[a] && used[b])
+        .map(|&[a, b]| [old_to_new[a], old_to_new[b]])
+        .collect();
+
+    // Flatten for return
+    let vertices_flat: Vec<f64> = compact_vertices.iter().flat_map(|v| v.iter().copied()).collect();
+    let edges_flat: Vec<usize> = compact_edges.iter().flat_map(|e| e.iter().copied()).collect();
+
+    (vertices_flat, edges_flat, cell_indices, cell_offsets)
+}
+
+/// Return the Voronoi tessellation of a point pattern on the 2-sphere.
+/// Returns (vertices, edges, cell_indices, cell_offsets) where:
+///   vertices:     flat [x0,y0,z0, x1,y1,z1, ...] — Voronoi vertices on the unit sphere
+///   edges:        flat [i0,j0, i1,j1, ...] — pairs of vertex indices forming edges
+///   cell_indices: flat vertex indices for all cells (CSR values)
+///   cell_offsets: length n_particles+1 (CSR offsets)
+pub fn voronoi_tessellation_2sphere(
+    points_array: &ArrayViewD<'_, f64>,
+) -> (Vec<f64>, Vec<usize>, Vec<usize>, Vec<usize>) {
+    let n_particles = points_array.shape()[0];
+    let cartesian = euclidean_from_spherical(points_array);
+    let (delaunay, pole) = create_delaunay_sphere(&cartesian);
+
+    // Extended Cartesian: index N is the pole
+    let mut ce = Vec::with_capacity((n_particles + 1) * 3);
+    for i in 0..n_particles {
+        ce.push(cartesian[[i, 0]]); ce.push(cartesian[[i, 1]]); ce.push(cartesian[[i, 2]]);
+    }
+    ce.push(pole[0]); ce.push(pole[1]); ce.push(pole[2]);
+
+    // Step 1: Voronoi vertices = spherical circumcenters of all inner Delaunay faces
+    let mut all_vertices: Vec<[f64; 3]> = Vec::new();
+    let mut face_idx_to_voro_idx: HashMap<usize, usize> = HashMap::new();
+
+    for face in delaunay.inner_faces() {
+        let [v0, v1, v2] = face.vertices();
+        let t0 = v0.data().tag; let t1 = v1.data().tag; let t2 = v2.data().tag;
+        let a = [ce[t0*3], ce[t0*3+1], ce[t0*3+2]];
+        let b = [ce[t1*3], ce[t1*3+1], ce[t1*3+2]];
+        let c = [ce[t2*3], ce[t2*3+1], ce[t2*3+2]];
+
+        let voro_idx = all_vertices.len();
+        face_idx_to_voro_idx.insert(face.fix().index(), voro_idx);
+        all_vertices.push(spherical_circumcenter(&a, &b, &c));
+    }
+
+    // Step 2: Voronoi edges (skip edges involving the pole)
+    let mut edges: Vec<[usize; 2]> = Vec::new();
+    for edge in delaunay.directed_edges() {
+        let rev = edge.rev();
+        if edge.fix().index() > rev.fix().index() { continue; }
+        if edge.from().data().tag == n_particles || edge.to().data().tag == n_particles { continue; }
+        let face_left = edge.face();
+        let face_right = rev.face();
+        if let (Some(li), Some(ri)) = (face_left.as_inner(), face_right.as_inner()) {
+            if let (Some(&vi), Some(&vj)) = (
+                face_idx_to_voro_idx.get(&li.fix().index()),
+                face_idx_to_voro_idx.get(&ri.fix().index()),
+            ) {
+                edges.push([vi, vj]);
+            }
+        }
+    }
+
+    // Step 3: Per-cell vertex lists for the N real particles
+    let mut cell_indices: Vec<usize> = Vec::new();
+    let mut cell_offsets: Vec<usize> = vec![0];
+
+    for i in 0..n_particles {
+        let fixed_handle = FixedHandleImpl::from_index(i);
+        let dynamic_handle = delaunay.vertex(fixed_handle);
+        for edge in dynamic_handle.out_edges() {
+            let face = edge.face();
+            if let Some(inner_face) = face.as_inner() {
+                if let Some(&voro_idx) = face_idx_to_voro_idx.get(&inner_face.fix().index()) {
+                    cell_indices.push(voro_idx);
+                }
+            }
+        }
+        cell_offsets.push(cell_indices.len());
+    }
+
+    // Flatten
+    let vertices_flat: Vec<f64> = all_vertices.iter().flat_map(|v| v.iter().copied()).collect();
+    let edges_flat: Vec<usize> = edges.iter().flat_map(|e| e.iter().copied()).collect();
+
+    (vertices_flat, edges_flat, cell_indices, cell_offsets)
 }

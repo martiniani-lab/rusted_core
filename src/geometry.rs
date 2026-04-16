@@ -306,6 +306,25 @@ pub fn spherical_triangle_area(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3]) -> f64 
     2.0 * numerator.atan2(denominator).abs()
 }
 
+/// Circumcenter of a spherical triangle with vertices a, b, c on the unit sphere.
+/// Returns the point equidistant (in geodesic distance) from a, b, c,
+/// on the same side of the sphere as the triangle.
+pub fn spherical_circumcenter(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3]) -> [f64; 3] {
+    let ab = [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+    let bc = [b[1]*c[2]-b[2]*c[1], b[2]*c[0]-b[0]*c[2], b[0]*c[1]-b[1]*c[0]];
+    let ca = [c[1]*a[2]-c[2]*a[1], c[2]*a[0]-c[0]*a[2], c[0]*a[1]-c[1]*a[0]];
+    let raw = [ab[0]+bc[0]+ca[0], ab[1]+bc[1]+ca[1], ab[2]+bc[2]+ca[2]];
+    let norm = (raw[0]*raw[0] + raw[1]*raw[1] + raw[2]*raw[2]).sqrt();
+    let mut cc = [raw[0]/norm, raw[1]/norm, raw[2]/norm];
+
+    // Pick the candidate on the same side as the triangle
+    let centroid = [a[0]+b[0]+c[0], a[1]+b[1]+c[1], a[2]+b[2]+c[2]];
+    if cc[0]*centroid[0] + cc[1]*centroid[1] + cc[2]*centroid[2] < 0.0 {
+        cc = [-cc[0], -cc[1], -cc[2]];
+    }
+    cc
+}
+
 // Types
 
 pub struct PointWithTag<T> {
