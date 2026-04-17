@@ -8,6 +8,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::geometry::{
     vec_no_clone,
+    clamped_bin,
     ensure_periodicity,
     rdf_normalisation,
 };
@@ -71,13 +72,13 @@ pub fn compute_radial_correlations_2d(
             }
             let dist_ij = hypot(r_ij[0], r_ij[1]);
             assert!(
-                dist_ij >= 0.0 && dist_ij < max_dist,
+                dist_ij >= 0.0 && dist_ij <= max_dist,
                 "Something is wrong with the distance between particles!\nDistance: {:?}",
                 dist_ij
             );
 
             // determine the relevant bin, and update the count at that bin for g(r)
-            let index = (dist_ij / binsize).floor() as usize;
+            let index = clamped_bin(dist_ij / binsize, nbins);
             *(counts[index].write().unwrap()) += 1.0;
 
             // Also compute the field correlation
@@ -178,7 +179,7 @@ pub fn compute_pnn_rdf(
             let (_, dist2) = iter.next().unwrap();
 
             // determine the relevant bin, and update the count at that bin for g(r)
-            let index = (dist2.sqrt() / binsize).floor() as usize;
+            let index = clamped_bin(dist2.sqrt() / binsize, nbins);
             assert!(index < nbins);
             *(counts[index].write().unwrap()) += 1.0;
         });
@@ -194,7 +195,7 @@ pub fn compute_pnn_rdf(
             let (_, dist2) = iter.next().unwrap();
 
             // determine the relevant bin, and update the count at that bin for g(r)
-            let index = (dist2.sqrt() / binsize).floor() as usize;
+            let index = clamped_bin(dist2.sqrt() / binsize, nbins);
             assert!(index < nbins);
             *(counts[index].write().unwrap()) += 1.0;
         });
@@ -272,13 +273,13 @@ pub fn compute_radial_gyromorphic_corr_2d(
             }
             let dist_ij = hypot(r_ij[0], r_ij[1]);
             assert!(
-                dist_ij >= 0.0 && dist_ij < max_dist,
+                dist_ij >= 0.0 && dist_ij <= max_dist,
                 "Something is wrong with the distance between particles!\nDistance: {:?}",
                 dist_ij
             );
 
             // determine the relevant bin, and update the count at that bin for g(r)
-            let index = (dist_ij / binsize).floor() as usize;
+            let index = clamped_bin(dist_ij / binsize, nbins);
             *(counts[index].write().unwrap()) += 1.0;
 
             // Also compute the field correlation
@@ -388,13 +389,13 @@ pub fn compute_radial_correlations_3d(
             }
             let dist_ij = hypot(hypot(r_ij[0], r_ij[1]), r_ij[2]);
             assert!(
-                dist_ij >= 0.0 && dist_ij < max_dist,
+                dist_ij >= 0.0 && dist_ij <= max_dist,
                 "Something is wrong with the distance between particles!\nDistance: {:?}",
                 dist_ij
             );
 
             // determine the relevant bin, and update the count at that bin for g(r)
-            let index = (dist_ij / binsize).floor() as usize;
+            let index = clamped_bin(dist_ij / binsize, nbins);
             *(counts[index].write().unwrap()) += 1.0;
 
             // Also compute the field correlation
@@ -509,7 +510,7 @@ pub fn compute_radial_correlations_2sphere(
             );
 
             // determine the relevant bin, and update the count at that bin for g(r)
-            let index = (dist_ij / binsize).floor() as usize;
+            let index = clamped_bin(dist_ij / binsize, nbins);
             *(counts[index].write().unwrap()) += 1.0;
 
             // Also compute the field correlation

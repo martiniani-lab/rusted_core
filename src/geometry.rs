@@ -21,6 +21,13 @@ macro_rules! vec_no_clone {
 }
 pub(crate) use vec_no_clone;
 
+/// Floor a float to a bin index, clamped to [0, nbins-1].
+/// Prevents the off-by-one panic when the value lands exactly on the upper boundary.
+#[inline]
+pub fn clamped_bin(value: f64, nbins: usize) -> usize {
+    (value.floor() as isize).clamp(0, nbins as isize - 1) as usize
+}
+
 pub fn ensure_periodicity(v: &mut Vec<f64>, box_lengths: &Vec<f64>) {
 
     v.iter_mut().zip(box_lengths).for_each(|(coord, box_length)| {

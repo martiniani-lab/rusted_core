@@ -8,6 +8,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::geometry::{
     vec_no_clone,
+    clamped_bin,
     ensure_periodicity,
     relative_distance_vec_spherical,
 };
@@ -56,13 +57,13 @@ pub fn compute_vector_rdf_2d(
             }
 
             // determine the relevant bin, and update the count at that bin
-            let index_x = ((r_ij[0] + bc_shift_factor * 0.5 * box_size_x) / binsize).floor() as usize;
-            let index_y = ((r_ij[1] + bc_shift_factor * 0.5 * box_size_y) / binsize).floor() as usize;
+            let index_x = clamped_bin((r_ij[0] + bc_shift_factor * 0.5 * box_size_x) / binsize, nbins);
+            let index_y = clamped_bin((r_ij[1] + bc_shift_factor * 0.5 * box_size_y) / binsize, nbins);
             *(rdf[index_x][index_y].write().unwrap()) += 1.0;
 
             // Use symmetry
-            let index_x_symm = ((bc_shift_factor * 0.5 * box_size_x - r_ij[0]) / binsize).floor() as usize;
-            let index_y_symm = ((bc_shift_factor * 0.5 * box_size_y - r_ij[1]) / binsize).floor() as usize;
+            let index_x_symm = clamped_bin((bc_shift_factor * 0.5 * box_size_x - r_ij[0]) / binsize, nbins);
+            let index_y_symm = clamped_bin((bc_shift_factor * 0.5 * box_size_y - r_ij[1]) / binsize, nbins);
             *(rdf[index_x_symm][index_y_symm].write().unwrap()) += 1.0;
         }
     });
@@ -121,8 +122,8 @@ pub fn compute_bounded_vector_rdf_2d(
                 }
 
                 // determine the relevant bin, and update the count at that bin
-                let index_x = ((r_ij[0] + radial_bound) / binsize).floor() as usize;
-                let index_y = ((r_ij[1] + radial_bound) / binsize).floor() as usize;
+                let index_x = clamped_bin((r_ij[0] + radial_bound) / binsize, nbins);
+                let index_y = clamped_bin((r_ij[1] + radial_bound) / binsize, nbins);
                 *(rdf[index_x][index_y].write().unwrap()) += 1.0;
 
             }
@@ -189,8 +190,8 @@ pub fn compute_nnbounded_vector_rdf_2d(
             }
 
             // determine the relevant bin, and update the count at that bin
-            let index_x = ((r_ij[0] + radial_bound) / binsize).floor() as usize;
-            let index_y = ((r_ij[1] + radial_bound) / binsize).floor() as usize;
+            let index_x = clamped_bin((r_ij[0] + radial_bound) / binsize, nbins);
+            let index_y = clamped_bin((r_ij[1] + radial_bound) / binsize, nbins);
             *(rdf[index_x][index_y].write().unwrap()) += 1.0;
 
             counter += 1;
@@ -255,8 +256,8 @@ pub fn compute_pnn_vector_rdf_2d(
         }
 
         // determine the relevant bin, and update the count at that bin
-        let index_x = ((r_ij[0] + radial_bound) / binsize).floor() as usize;
-        let index_y = ((r_ij[1] + radial_bound) / binsize).floor() as usize;
+        let index_x = clamped_bin((r_ij[0] + radial_bound) / binsize, nbins);
+        let index_y = clamped_bin((r_ij[1] + radial_bound) / binsize, nbins);
 
         assert!(index_x < nbins);
         assert!(index_y < nbins);
@@ -341,8 +342,8 @@ pub fn compute_particle_gyromorphic_correlations(
             }
 
             // determine the relevant bin, and update the count at that bin
-            let index_x = ((r_ij[0] + bc_shift_factor * 0.5 * box_size_x) / binsize).floor() as usize;
-            let index_y = ((r_ij[1] + bc_shift_factor * 0.5 * box_size_y) / binsize).floor() as usize;
+            let index_x = clamped_bin((r_ij[0] + bc_shift_factor * 0.5 * box_size_x) / binsize, nbins);
+            let index_y = clamped_bin((r_ij[1] + bc_shift_factor * 0.5 * box_size_y) / binsize, nbins);
             *(rdf[index_x][index_y].write().unwrap()) += 1.0;
 
             // Compute the orientational part
@@ -355,8 +356,8 @@ pub fn compute_particle_gyromorphic_correlations(
             *(corr[index_x][index_y][1].write().unwrap()) += dpsiny;
 
             // Use symmetry
-            let index_x_symm = ((bc_shift_factor * 0.5 * box_size_x - r_ij[0]) / binsize).floor() as usize;
-            let index_y_symm = ((bc_shift_factor * 0.5 * box_size_y - r_ij[1]) / binsize).floor() as usize;
+            let index_x_symm = clamped_bin((bc_shift_factor * 0.5 * box_size_x - r_ij[0]) / binsize, nbins);
+            let index_y_symm = clamped_bin((bc_shift_factor * 0.5 * box_size_y - r_ij[1]) / binsize, nbins);
             *(rdf[index_x_symm][index_y_symm].write().unwrap()) += 1.0;
 
             *(corr[index_x_symm][index_y_symm][0].write().unwrap()) += dpsinx;
@@ -436,15 +437,15 @@ pub fn compute_vector_rdf_3d(
             }
 
             // determine the relevant bin, and update the count at that bin
-            let index_x = ((r_ij[0] + bc_shift_factor * 0.5 * box_size_x) / binsize).floor() as usize;
-            let index_y = ((r_ij[1] + bc_shift_factor * 0.5 * box_size_y) / binsize).floor() as usize;
-            let index_z = ((r_ij[2] + bc_shift_factor * 0.5 * box_size_z) / binsize).floor() as usize;
+            let index_x = clamped_bin((r_ij[0] + bc_shift_factor * 0.5 * box_size_x) / binsize, nbins);
+            let index_y = clamped_bin((r_ij[1] + bc_shift_factor * 0.5 * box_size_y) / binsize, nbins);
+            let index_z = clamped_bin((r_ij[2] + bc_shift_factor * 0.5 * box_size_z) / binsize, nbins);
             *(rdf[index_x][index_y][index_z].write().unwrap()) += 1.0;
 
             // Use symmetry
-            let index_x_symm = ((bc_shift_factor * 0.5 * box_size_x - r_ij[0]) / binsize).floor() as usize;
-            let index_y_symm = ((bc_shift_factor * 0.5 * box_size_y - r_ij[1]) / binsize).floor() as usize;
-            let index_z_symm = ((bc_shift_factor * 0.5 * box_size_z - r_ij[2]) / binsize).floor() as usize;
+            let index_x_symm = clamped_bin((bc_shift_factor * 0.5 * box_size_x - r_ij[0]) / binsize, nbins);
+            let index_y_symm = clamped_bin((bc_shift_factor * 0.5 * box_size_y - r_ij[1]) / binsize, nbins);
+            let index_z_symm = clamped_bin((bc_shift_factor * 0.5 * box_size_z - r_ij[2]) / binsize, nbins);
             *(rdf[index_x_symm][index_y_symm][index_z_symm]
                 .write()
                 .unwrap()) += 1.0;
@@ -507,9 +508,9 @@ pub fn compute_bounded_vector_rdf_3d(
                 }
 
                 // determine the relevant bin, and update the count at that bin
-                let index_x = ((r_ij[0] + radial_bound) / binsize).floor() as usize;
-                let index_y = ((r_ij[1] + radial_bound) / binsize).floor() as usize;
-                let index_z: usize = ((r_ij[2] + radial_bound) / binsize).floor() as usize;
+                let index_x = clamped_bin((r_ij[0] + radial_bound) / binsize, nbins);
+                let index_y = clamped_bin((r_ij[1] + radial_bound) / binsize, nbins);
+                let index_z: usize = clamped_bin((r_ij[2] + radial_bound) / binsize, nbins);
                 *(rdf[index_x][index_y][index_z].write().unwrap()) += 1.0;
 
             }
@@ -581,9 +582,9 @@ pub fn compute_nnbounded_vector_rdf_3d(
             }
 
             // determine the relevant bin, and update the count at that bin
-            let index_x = ((r_ij[0] + radial_bound) / binsize).floor() as usize;
-            let index_y = ((r_ij[1] + radial_bound) / binsize).floor() as usize;
-            let index_z: usize = ((r_ij[2] + radial_bound) / binsize).floor() as usize;
+            let index_x = clamped_bin((r_ij[0] + radial_bound) / binsize, nbins);
+            let index_y = clamped_bin((r_ij[1] + radial_bound) / binsize, nbins);
+            let index_z: usize = clamped_bin((r_ij[2] + radial_bound) / binsize, nbins);
             *(rdf[index_x][index_y][index_z].write().unwrap()) += 1.0;
 
             counter += 1;
@@ -662,9 +663,9 @@ pub fn compute_pnn_vector_rdf_3d(
         }
 
         // determine the relevant bin, and update the count at that bin
-        let index_x = ((r_ij[0] + radial_bound) / binsize).floor() as usize;
-        let index_y = ((r_ij[1] + radial_bound) / binsize).floor() as usize;
-        let index_z = ((r_ij[2] + radial_bound) / binsize).floor() as usize;
+        let index_x = clamped_bin((r_ij[0] + radial_bound) / binsize, nbins);
+        let index_y = clamped_bin((r_ij[1] + radial_bound) / binsize, nbins);
+        let index_z = clamped_bin((r_ij[2] + radial_bound) / binsize, nbins);
 
         assert!(index_x < nbins);
         assert!(index_y < nbins);
@@ -718,8 +719,8 @@ pub fn compute_vector_rdf_2sphere(
             let (dist_theta, dist_phi) = relative_distance_vec_spherical(thetai,phii, thetaj, phij);
 
             // determine the relevant bin, and update the count at that bin
-            let index_x = (dist_theta / binsize).floor() as usize;
-            let index_y = (dist_phi / binsize).floor() as usize;
+            let index_x = clamped_bin(dist_theta / binsize, nbins_theta);
+            let index_y = clamped_bin(dist_phi / binsize, nbins_phi);
             *(rdf[index_x][index_y].write().unwrap()) += 1.0;
         }
     });
