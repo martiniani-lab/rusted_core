@@ -57,12 +57,7 @@ pub fn compute_radial_correlations_2d(
             if periodic {
                 ensure_periodicity(&mut r_ij, &box_lengths);
             }
-            let dist_ij = hypot(r_ij[0], r_ij[1]);
-            assert!(
-                dist_ij >= 0.0 && dist_ij <= max_dist,
-                "Something is wrong with the distance between particles!\nDistance: {:?}",
-                dist_ij
-            );
+            let dist_ij = (r_ij[0]*r_ij[0] + r_ij[1]*r_ij[1]).sqrt();
 
             let index = clamped_bin(dist_ij / binsize, nbins);
             atomic_add(&counts[index], 1.0);
@@ -205,12 +200,7 @@ pub fn compute_radial_gyromorphic_corr_2d(
             if periodic {
                 ensure_periodicity(&mut r_ij, &box_lengths);
             }
-            let dist_ij = hypot(r_ij[0], r_ij[1]);
-            assert!(
-                dist_ij >= 0.0 && dist_ij <= max_dist,
-                "Something is wrong with the distance between particles!\nDistance: {:?}",
-                dist_ij
-            );
+            let dist_ij = (r_ij[0]*r_ij[0] + r_ij[1]*r_ij[1]).sqrt();
 
             let index = clamped_bin(dist_ij / binsize, nbins);
             atomic_add(&counts[index], 1.0);
@@ -290,12 +280,7 @@ pub fn compute_radial_correlations_3d(
             if periodic {
                 ensure_periodicity(&mut r_ij, &box_lengths);
             }
-            let dist_ij = hypot(hypot(r_ij[0], r_ij[1]), r_ij[2]);
-            assert!(
-                dist_ij >= 0.0 && dist_ij <= max_dist,
-                "Something is wrong with the distance between particles!\nDistance: {:?}",
-                dist_ij
-            );
+            let dist_ij = (r_ij[0]*r_ij[0] + r_ij[1]*r_ij[1] + r_ij[2]*r_ij[2]).sqrt();
 
             let index = clamped_bin(dist_ij / binsize, nbins);
             atomic_add(&counts[index], 1.0);

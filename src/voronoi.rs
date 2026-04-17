@@ -1,5 +1,4 @@
 use ang::atan2;
-use libm::hypot;
 use ndarray::parallel::prelude::*;
 use ndarray::{Array, Axis, Dim, ShapeBuilder};
 use numpy::ndarray::ArrayViewD;
@@ -385,7 +384,7 @@ pub fn compute_voronoi_quantities_2d(
                 if periodic {
                     ensure_periodicity(&mut vector, &box_lengths);
                 }
-                let edge_length = hypot(vector[0], vector[1]);
+                let edge_length = (vector[0]*vector[0] + vector[1]*vector[1]).sqrt();
                 if edge_length < nn_distance {
                     nn_distance = edge_length;
                 }
@@ -487,7 +486,7 @@ pub fn voronoi_furthest_site(
             let v0 = face.positions()[0];
             let dx = circumcenter.x - v0.x;
             let dy = circumcenter.y - v0.y;
-            let circumradius = hypot(dx, dy);
+            let circumradius = (dx*dx + dy*dy).sqrt();
 
             site_i[0] = circumcenter.x;
             site_i[1] = circumcenter.y;

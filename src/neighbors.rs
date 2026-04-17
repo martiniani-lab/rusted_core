@@ -1,4 +1,3 @@
-use libm::hypot;
 use ndarray::parallel::prelude::*;
 use ndarray::Array;
 use numpy::ndarray::{ArrayView1, ArrayViewD};
@@ -180,7 +179,7 @@ pub fn cluster_by_distance(points_array: &ArrayViewD<'_, f64>, threshold: f64, b
                     }
 
                     // Inherit lower of 2 tags if distance is smaller than threshold
-                    let edge_length = hypot(vector[0], vector[1]);
+                    let edge_length = (vector[0]*vector[0] + vector[1]*vector[1]).sqrt();
                     let neigh_tag = e.to().data().tag;
                     if edge_length <= threshold && *id > neigh_tag {
                             *id = neigh_tag;
