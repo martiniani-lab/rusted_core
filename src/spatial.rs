@@ -13,7 +13,7 @@ use ndarray::{Array, Dim};
 use crate::geometry::{
     PointWithTag, ListPointWithTag,
     euclidean_from_spherical_single_point, great_circle_distance,
-    find_stereographic_pole, stereographic_project,
+    stereographic_project,
 };
 
 pub fn compute_periodic_rstar_tree(
@@ -386,40 +386,62 @@ pub fn create_delaunay(points_array: &ArrayViewD<'_, f64>, periodic: bool, box_l
 /// Takes Cartesian coordinates (N×3, points on the unit sphere).
 /// Each vertex carries a tag equal to its particle index so that the original
 /// coordinates can be looked up from the triangulation.
-/// Returns (delaunay, pole) so callers can use the pole's Cartesian coordinates.
+/// Build a Delaunay triangulation on the 2-sphere via stereographic projection.
+/// Takes Cartesian coordinates (N×3, points on the unit sphere).
+///
+/// One data point is chosen as the projection pole (the most peripheral one)
+/// and excluded from the 2D Delaunay. The remaining N-1 points are projected
+/// and triangulated. The pole's neighbors are the convex hull vertices of the
+/// projected set — callers "stitch" the pole back in by treating outer faces
+/// as triangles involving the pole.
+///
+/// Each Delaunay vertex carries a tag equal to its original particle index.
+/// Returns (delaunay, pole_index).
 pub fn create_delaunay_sphere(
     cartesian_points: &Array<f64, Dim<[usize; 2]>>
-) -> (DelaunayTriangulation<PointWithTag<usize>>, [f64; 3]) {
+) -> (DelaunayTriangulation<PointWithTag<usize>>, usize) {
     let n_particles = cartesian_points.shape()[0];
 
-    // Choose the projection pole farthest from the data
-    let pole = find_stereographic_pole(cartesian_points);
+    // Pick the most peripheral data point as the projection pole:
+    // the one with the smallest dot product with the centroid.
+    let mut cx = 0.0_f64; let mut cy = 0.0_f64; let mut cz = 0.0_f64;
+    for i in 0..n_particles {
+        cx += cartesian_points[[i, 0]];
+        cy += cartesian_points[[i, 1]];
+        cz += cartesian_points[[i, 2]];
+    }
+    let mut pole_idx = 0;
+    let mut min_dot = f64::INFINITY;
+    for i in 0..n_particles {
+        let dot = cartesian_points[[i, 0]] * cx
+                + cartesian_points[[i, 1]] * cy
+                + cartesian_points[[i, 2]] * cz;
+        if dot < min_dot {
+            min_dot = dot;
+            pole_idx = i;
+        }
+    }
 
-    // Project all points to the plane
+    let pole = [
+        cartesian_points[[pole_idx, 0]],
+        cartesian_points[[pole_idx, 1]],
+        cartesian_points[[pole_idx, 2]],
+    ];
+
+    // Project all points except the pole
     let projected = stereographic_project(cartesian_points, &pole);
 
-    // Build tagged Point2 vector — tag = particle index
-    let mut points: Vec<PointWithTag<usize>> = (0..n_particles)
+    // Build tagged Point2 vector for the N-1 non-pole points
+    let points: Vec<PointWithTag<usize>> = (0..n_particles)
+        .filter(|&i| i != pole_idx)
         .map(|i| PointWithTag {
             position: Point2::new(projected[i][0], projected[i][1]),
             tag: i,
         })
         .collect();
 
-    // Add the pole as vertex N so all Delaunay faces become inner faces.
-    // The pole projects to infinity; a large finite proxy ensures correct topology.
-    // Callers must use the pole's real Cartesian coords for circumcenter calculations.
-    let max_r2 = projected.iter()
-        .map(|p| p[0]*p[0] + p[1]*p[1])
-        .fold(0.0_f64, f64::max);
-    let pole_proxy_r = 1e6 * max_r2.sqrt().max(1.0);
-    points.push(PointWithTag {
-        position: Point2::new(pole_proxy_r, 0.0),
-        tag: n_particles,
-    });
-
-    // bulk_load_stable preserves ordering: vertex index i = particle i, index N = pole
-    (DelaunayTriangulation::<PointWithTag<usize>>::bulk_load_stable(points).unwrap(), pole)
+    // bulk_load_stable preserves ordering
+    (DelaunayTriangulation::<PointWithTag<usize>>::bulk_load_stable(points).unwrap(), pole_idx)
 }
 
 pub fn count_points_in_disk(rtree: &RTree<[f64;2]>, r_center: Vec<f64>, radius: f64) -> usize {

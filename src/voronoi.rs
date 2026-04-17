@@ -97,11 +97,13 @@ pub fn compute_steinhardt_boops_2sphere(
     let n_particles = points_array.shape()[0];
     let boop_orders_number = boop_order_array.shape()[0];
 
-    // Convert to Cartesian (on the unit sphere) for angle computation
     let cartesian = euclidean_from_spherical(points_array);
+    let (delaunay, pole_idx) = create_delaunay_sphere(&cartesian);
 
-    // Build the spherical Delaunay via stereographic projection
-    let (delaunay, _) = create_delaunay_sphere(&cartesian);
+    // Collect convex hull vertex tags (= pole's neighbors on the sphere)
+    let hull_tags: Vec<usize> = delaunay.convex_hull()
+        .map(|edge| edge.from().data().tag)
+        .collect();
 
     let mut boop_vectors = Array::<f64, _>::zeros((n_particles, boop_orders_number, 2).f());
 
@@ -110,37 +112,38 @@ pub fn compute_steinhardt_boops_2sphere(
         .into_par_iter()
         .enumerate()
         .for_each(|(i, mut boops_i)| {
-            let fixed_handle = FixedHandleImpl::from_index(i);
-            let dynamic_handle = delaunay.vertex(fixed_handle);
-            let outgoing_edges = dynamic_handle.out_edges();
-
-            let mut neighbour_count = 0;
-
-            // Current point in Cartesian (= outward unit normal)
             let ni = [cartesian[[i, 0]], cartesian[[i, 1]], cartesian[[i, 2]]];
-
-            // Local tangent frame at point i
             let (e1, e2) = tangent_frame(&ni);
 
-            for e in outgoing_edges {
-                // Neighbor's particle index (stored as tag in the Delaunay vertex)
-                let j = e.to().data().tag;
+            // Collect neighbor particle indices
+            let mut neighbors: Vec<usize> = Vec::new();
 
-                // Skip the pole vertex (tag == n_particles)
-                if j == n_particles { continue; }
+            if i == pole_idx {
+                // Pole particle: neighbors are the convex hull vertices
+                neighbors.extend_from_slice(&hull_tags);
+            } else {
+                // Non-pole: use Delaunay edges
+                let di = if i < pole_idx { i } else { i - 1 };
+                let fixed_handle = FixedHandleImpl::from_index(di);
+                let dynamic_handle = delaunay.vertex(fixed_handle);
 
-                neighbour_count += 1;
+                for e in dynamic_handle.out_edges() {
+                    neighbors.push(e.to().data().tag);
+                    // If this edge borders the outer face, the pole is also a neighbor
+                    if e.face().as_inner().is_none() {
+                        neighbors.push(pole_idx);
+                    }
+                }
+            }
 
-                // Neighbor's Cartesian coordinates
+            let neighbour_count = neighbors.len();
+            for &j in &neighbors {
                 let xj = [cartesian[[j, 0]], cartesian[[j, 1]], cartesian[[j, 2]]];
 
-                // Geodesic direction from i to j: project xj onto the tangent plane at i
                 let dot = xj[0]*ni[0] + xj[1]*ni[1] + xj[2]*ni[2];
                 let dx = xj[0] - dot * ni[0];
                 let dy = xj[1] - dot * ni[1];
                 let dz = xj[2] - dot * ni[2];
-
-                // Bond angle in local frame
                 let comp1 = dx*e1[0] + dy*e1[1] + dz*e1[2];
                 let comp2 = dx*e2[0] + dy*e2[1] + dz*e2[2];
                 let theta = atan2(comp2, comp1);
@@ -148,7 +151,6 @@ pub fn compute_steinhardt_boops_2sphere(
                 for n in 0..boop_orders_number {
                     let order = boop_order_array[[n]] as f64;
                     let angle = order * theta;
-
                     boops_i[[n, 0]] += angle.cos();
                     boops_i[[n, 1]] += angle.sin();
                 }
@@ -171,47 +173,75 @@ pub fn compute_voronoi_quantities_2sphere(
 ) -> (Option<Vec<f64>>, Option<Vec<usize>>, Option<Vec<f64>>) {
     let n_particles = points_array.shape()[0];
 
-    // Convert to Cartesian and build Delaunay (pole added as vertex N)
     let cartesian = euclidean_from_spherical(points_array);
-    let (delaunay, pole) = create_delaunay_sphere(&cartesian);
+    let (delaunay, pole_idx) = create_delaunay_sphere(&cartesian);
+    let pole_cart = [cartesian[[pole_idx, 0]], cartesian[[pole_idx, 1]], cartesian[[pole_idx, 2]]];
 
-    // Extended Cartesian: index 0..N-1 are particles, index N is the pole
-    let mut ce = Vec::with_capacity((n_particles + 1) * 3);
-    for i in 0..n_particles {
-        ce.push(cartesian[[i, 0]]); ce.push(cartesian[[i, 1]]); ce.push(cartesian[[i, 2]]);
-    }
-    ce.push(pole[0]); ce.push(pole[1]); ce.push(pole[2]);
+    // Convex hull tags = pole's neighbors (needed for the pole particle's cell)
+    let hull_tags: Vec<usize> = delaunay.convex_hull()
+        .map(|edge| edge.from().data().tag)
+        .collect();
 
     let mut areas_vector = vec![0.0; n_particles];
     let mut neighbour_counts_vector: Vec<usize> = vec![0; n_particles];
     let mut nn_distances_vector = vec![0.0; n_particles];
 
+    // Helper: get Cartesian coords for particle tag
+    let cart = |tag: usize| -> [f64; 3] {
+        [cartesian[[tag, 0]], cartesian[[tag, 1]], cartesian[[tag, 2]]]
+    };
+
     if voronoi_areas {
         areas_vector.par_iter_mut().enumerate().for_each(|(i, area_i)| {
-            let fixed_handle = FixedHandleImpl::from_index(i);
-            let dynamic_handle = delaunay.vertex(fixed_handle);
-
-            let pi = [ce[i*3], ce[i*3+1], ce[i*3+2]];
+            let pi = cart(i);
             let mut circumcenters: Vec<[f64; 3]> = Vec::new();
 
-            for edge in dynamic_handle.out_edges() {
-                let face = edge.face();
-                if let Some(inner_face) = face.as_inner() {
-                    let [v0, v1, v2] = inner_face.vertices();
-                    let t0 = v0.data().tag; let t1 = v1.data().tag; let t2 = v2.data().tag;
-                    let a = [ce[t0*3], ce[t0*3+1], ce[t0*3+2]];
-                    let b = [ce[t1*3], ce[t1*3+1], ce[t1*3+2]];
-                    let c = [ce[t2*3], ce[t2*3+1], ce[t2*3+2]];
+            if i == pole_idx {
+                // Pole cell: circumcenters of (pole, hull[k], hull[k+1])
+                for k in 0..hull_tags.len() {
+                    let a = pole_cart;
+                    let b = cart(hull_tags[k]);
+                    let c = cart(hull_tags[(k + 1) % hull_tags.len()]);
                     circumcenters.push(spherical_circumcenter(&a, &b, &c));
+                }
+            } else {
+                let di = if i < pole_idx { i } else { i - 1 };
+                let fixed_handle = FixedHandleImpl::from_index(di);
+                let dynamic_handle = delaunay.vertex(fixed_handle);
+
+                // Collect edges so we can look up the previous neighbor
+                let edges_vec: Vec<_> = dynamic_handle.out_edges().collect();
+                let n_edges = edges_vec.len();
+
+                // Find this vertex's two hull neighbors (for stitching)
+                let hull_set: std::collections::HashSet<usize> = hull_tags.iter().copied().collect();
+                let my_hull_neighbors: Vec<usize> = edges_vec.iter()
+                    .map(|e| e.to().data().tag)
+                    .filter(|t| hull_set.contains(t))
+                    .collect();
+
+                for k in 0..n_edges {
+                    let face = edges_vec[k].face();
+                    if let Some(inner_face) = face.as_inner() {
+                        let [v0, v1, v2] = inner_face.vertices();
+                        circumcenters.push(spherical_circumcenter(
+                            &cart(v0.data().tag), &cart(v1.data().tag), &cart(v2.data().tag)));
+                    } else {
+                        // Outer face replaces TWO stitched triangles:
+                        //   (i, hull_neigh_a, pole) and (i, hull_neigh_b, pole)
+                        // where hull_neigh_a and hull_neigh_b are i's two hull-adjacent neighbors.
+                        assert!(my_hull_neighbors.len() == 2,
+                            "Hull vertex should have exactly 2 hull neighbors");
+                        circumcenters.push(spherical_circumcenter(&pi, &cart(my_hull_neighbors[0]), &pole_cart));
+                        circumcenters.push(spherical_circumcenter(&pi, &cart(my_hull_neighbors[1]), &pole_cart));
+                    }
                 }
             }
 
             let n_verts = circumcenters.len();
             let mut cell_area = 0.0;
             for k in 0..n_verts {
-                let v1 = &circumcenters[k];
-                let v2 = &circumcenters[(k + 1) % n_verts];
-                cell_area += spherical_triangle_area(&pi, v1, v2);
+                cell_area += spherical_triangle_area(&pi, &circumcenters[k], &circumcenters[(k + 1) % n_verts]);
             }
             *area_i = cell_area;
         });
@@ -219,35 +249,43 @@ pub fn compute_voronoi_quantities_2sphere(
 
     if voronoi_neighbour_count {
         neighbour_counts_vector.par_iter_mut().enumerate().for_each(|(i, count_i)| {
-            let fixed_handle = FixedHandleImpl::from_index(i);
-            let dynamic_handle = delaunay.vertex(fixed_handle);
-            for e in dynamic_handle.out_edges() {
-                if e.to().data().tag != n_particles { *count_i += 1; }
+            if i == pole_idx {
+                *count_i = hull_tags.len();
+            } else {
+                let di = if i < pole_idx { i } else { i - 1 };
+                let fixed_handle = FixedHandleImpl::from_index(di);
+                for e in delaunay.vertex(fixed_handle).out_edges() {
+                    *count_i += 1;
+                    if e.face().as_inner().is_none() { *count_i += 1; } // pole neighbor
+                }
             }
         });
     }
 
     if voronoi_nn_distance {
         nn_distances_vector.par_iter_mut().enumerate().for_each(|(i, distance_i)| {
-            let fixed_handle = FixedHandleImpl::from_index(i);
-            let dynamic_handle = delaunay.vertex(fixed_handle);
-
-            let theta_i = points_array[[i, 0]];
-            let phi_i = points_array[[i, 1]];
-            let pi_sph = [theta_i, phi_i];
-
+            let pi_sph = [points_array[[i, 0]], points_array[[i, 1]]];
             let mut nn_distance = INFINITY;
 
-            for e in dynamic_handle.out_edges() {
-                let j = e.to().data().tag;
-                if j == n_particles { continue; }
+            let neighbors: Vec<usize> = if i == pole_idx {
+                hull_tags.clone()
+            } else {
+                let di = if i < pole_idx { i } else { i - 1 };
+                let fixed_handle = FixedHandleImpl::from_index(di);
+                let mut nb: Vec<usize> = delaunay.vertex(fixed_handle).out_edges()
+                    .map(|e| e.to().data().tag).collect();
+                // Check if pole is a neighbor (any outer face)
+                let has_outer = delaunay.vertex(fixed_handle).out_edges()
+                    .any(|e| e.face().as_inner().is_none());
+                if has_outer { nb.push(pole_idx); }
+                nb
+            };
+
+            for j in neighbors {
                 let pj_sph = [points_array[[j, 0]], points_array[[j, 1]]];
                 let dist = great_circle_distance(&pi_sph, &pj_sph);
-                if dist < nn_distance {
-                    nn_distance = dist;
-                }
+                if dist < nn_distance { nn_distance = dist; }
             }
-
             *distance_i = nn_distance;
         });
     }
@@ -531,37 +569,44 @@ pub fn voronoi_tessellation_2sphere(
 ) -> (Vec<f64>, Vec<usize>, Vec<usize>, Vec<usize>) {
     let n_particles = points_array.shape()[0];
     let cartesian = euclidean_from_spherical(points_array);
-    let (delaunay, pole) = create_delaunay_sphere(&cartesian);
+    let (delaunay, pole_idx) = create_delaunay_sphere(&cartesian);
+    let pole_cart = [cartesian[[pole_idx, 0]], cartesian[[pole_idx, 1]], cartesian[[pole_idx, 2]]];
 
-    // Extended Cartesian: index N is the pole
-    let mut ce = Vec::with_capacity((n_particles + 1) * 3);
-    for i in 0..n_particles {
-        ce.push(cartesian[[i, 0]]); ce.push(cartesian[[i, 1]]); ce.push(cartesian[[i, 2]]);
-    }
-    ce.push(pole[0]); ce.push(pole[1]); ce.push(pole[2]);
+    let cart = |tag: usize| -> [f64; 3] {
+        [cartesian[[tag, 0]], cartesian[[tag, 1]], cartesian[[tag, 2]]]
+    };
 
-    // Step 1: Voronoi vertices = spherical circumcenters of all inner Delaunay faces
+    let hull_tags: Vec<usize> = delaunay.convex_hull()
+        .map(|edge| edge.from().data().tag)
+        .collect();
+
+    // Step 1: Voronoi vertices from inner Delaunay faces
     let mut all_vertices: Vec<[f64; 3]> = Vec::new();
     let mut face_idx_to_voro_idx: HashMap<usize, usize> = HashMap::new();
 
     for face in delaunay.inner_faces() {
         let [v0, v1, v2] = face.vertices();
-        let t0 = v0.data().tag; let t1 = v1.data().tag; let t2 = v2.data().tag;
-        let a = [ce[t0*3], ce[t0*3+1], ce[t0*3+2]];
-        let b = [ce[t1*3], ce[t1*3+1], ce[t1*3+2]];
-        let c = [ce[t2*3], ce[t2*3+1], ce[t2*3+2]];
-
         let voro_idx = all_vertices.len();
         face_idx_to_voro_idx.insert(face.fix().index(), voro_idx);
-        all_vertices.push(spherical_circumcenter(&a, &b, &c));
+        all_vertices.push(spherical_circumcenter(
+            &cart(v0.data().tag), &cart(v1.data().tag), &cart(v2.data().tag)));
     }
 
-    // Step 2: Voronoi edges (skip edges involving the pole)
+    // Step 1b: Voronoi vertices from stitched pole triangles (pole, hull[k], hull[k+1])
+    let mut pole_face_voro_indices: Vec<usize> = Vec::new();
+    for k in 0..hull_tags.len() {
+        let voro_idx = all_vertices.len();
+        pole_face_voro_indices.push(voro_idx);
+        all_vertices.push(spherical_circumcenter(
+            &pole_cart, &cart(hull_tags[k]), &cart(hull_tags[(k + 1) % hull_tags.len()])));
+    }
+
+    // Step 2: Voronoi edges — inner-inner edges + stitched edges
     let mut edges: Vec<[usize; 2]> = Vec::new();
+    // Inner edges
     for edge in delaunay.directed_edges() {
         let rev = edge.rev();
         if edge.fix().index() > rev.fix().index() { continue; }
-        if edge.from().data().tag == n_particles || edge.to().data().tag == n_particles { continue; }
         let face_left = edge.face();
         let face_right = rev.face();
         if let (Some(li), Some(ri)) = (face_left.as_inner(), face_right.as_inner()) {
@@ -573,19 +618,74 @@ pub fn voronoi_tessellation_2sphere(
             }
         }
     }
+    // Stitched edges: between consecutive pole-face circumcenters
+    for k in 0..pole_face_voro_indices.len() {
+        edges.push([
+            pole_face_voro_indices[k],
+            pole_face_voro_indices[(k + 1) % pole_face_voro_indices.len()],
+        ]);
+    }
+    // Stitched edges: between pole-face circumcenters and adjacent inner-face circumcenters
+    // Each hull edge (hull[k], hull[k+1]) has an inner face on one side; the pole face is on the other.
+    // The Voronoi edge connects their circumcenters.
+    for edge in delaunay.directed_edges() {
+        if edge.face().as_inner().is_some() && edge.rev().face().as_inner().is_none() {
+            // This directed edge has inner face on left, outer face on right (reversed)
+            // The edge goes from vertex A to vertex B; the hull edge is (A, B)
+            let a_tag = edge.from().data().tag;
+            let b_tag = edge.to().data().tag;
+            // Find which pole face this corresponds to
+            for k in 0..hull_tags.len() {
+                let next = (k + 1) % hull_tags.len();
+                if (hull_tags[k] == a_tag && hull_tags[next] == b_tag) ||
+                   (hull_tags[k] == b_tag && hull_tags[next] == a_tag) {
+                    let inner_vi = face_idx_to_voro_idx[&edge.face().as_inner().unwrap().fix().index()];
+                    edges.push([inner_vi, pole_face_voro_indices[k]]);
+                    break;
+                }
+            }
+        }
+    }
 
-    // Step 3: Per-cell vertex lists for the N real particles
+    // Step 3: Per-cell vertex lists
     let mut cell_indices: Vec<usize> = Vec::new();
     let mut cell_offsets: Vec<usize> = vec![0];
 
     for i in 0..n_particles {
-        let fixed_handle = FixedHandleImpl::from_index(i);
-        let dynamic_handle = delaunay.vertex(fixed_handle);
-        for edge in dynamic_handle.out_edges() {
-            let face = edge.face();
-            if let Some(inner_face) = face.as_inner() {
-                if let Some(&voro_idx) = face_idx_to_voro_idx.get(&inner_face.fix().index()) {
-                    cell_indices.push(voro_idx);
+        if i == pole_idx {
+            // Pole cell: circumcenters of stitched triangles
+            for &vi in &pole_face_voro_indices {
+                cell_indices.push(vi);
+            }
+        } else {
+            let di = if i < pole_idx { i } else { i - 1 };
+            let fixed_handle = FixedHandleImpl::from_index(di);
+            let dynamic_handle = delaunay.vertex(fixed_handle);
+
+            let edges_vec: Vec<_> = dynamic_handle.out_edges().collect();
+            let n_edges = edges_vec.len();
+
+            // Find this vertex's two hull neighbors (for stitching)
+            let hull_set: std::collections::HashSet<usize> = hull_tags.iter().copied().collect();
+            let my_hull_neighbors: Vec<usize> = edges_vec.iter()
+                .map(|e| e.to().data().tag)
+                .filter(|t| hull_set.contains(t))
+                .collect();
+
+            for k in 0..n_edges {
+                let face = edges_vec[k].face();
+                if let Some(inner_face) = face.as_inner() {
+                    if let Some(&voro_idx) = face_idx_to_voro_idx.get(&inner_face.fix().index()) {
+                        cell_indices.push(voro_idx);
+                    }
+                } else {
+                    // Outer face: TWO stitched circumcenters from hull neighbors
+                    for &hn in &my_hull_neighbors {
+                        let cc = spherical_circumcenter(&cart(i), &cart(hn), &pole_cart);
+                        let vi = all_vertices.len();
+                        all_vertices.push(cc);
+                        cell_indices.push(vi);
+                    }
                 }
             }
         }

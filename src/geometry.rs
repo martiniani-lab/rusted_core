@@ -2,7 +2,6 @@ use ang::atan2;
 use numpy::ndarray::ArrayViewD;
 use ndarray::parallel::prelude::*;
 use ndarray::{Array, Axis, Dim};
-use rand::RngExt;
 use std::f64::consts::PI;
 use std::fmt::{Display, Formatter, Result};
 
@@ -174,81 +173,6 @@ pub fn tangent_frame(n: &[f64; 3]) -> ([f64; 3], [f64; 3]) {
     ];
 
     (e1, e2)
-}
-
-/// Find the best stereographic projection pole for points on the unit sphere.
-/// Returns the pole (unit vector) that is farthest from all data points.
-/// Strategy: use the antipode of the centroid when it is well-defined, otherwise
-/// draw random candidate poles and keep the one whose closest data point is farthest.
-pub fn find_stereographic_pole(cartesian_points: &Array<f64, Dim<[usize; 2]>>) -> [f64; 3] {
-    let n = cartesian_points.shape()[0];
-
-    // Compute centroid of Cartesian positions
-    let mut cx = 0.0_f64;
-    let mut cy = 0.0_f64;
-    let mut cz = 0.0_f64;
-    for i in 0..n {
-        cx += cartesian_points[[i, 0]];
-        cy += cartesian_points[[i, 1]];
-        cz += cartesian_points[[i, 2]];
-    }
-    cx /= n as f64;
-    cy /= n as f64;
-    cz /= n as f64;
-
-    let norm = (cx*cx + cy*cy + cz*cz).sqrt();
-
-    if norm > 0.01 {
-        // Centroid is well-defined — use its antipode
-        let pole = [-cx/norm, -cy/norm, -cz/norm];
-        // Check that no data point is too close (dot > 0.9999 means < 0.8°)
-        let mut max_dot = -1.0_f64;
-        for i in 0..n {
-            let dot = cartesian_points[[i, 0]] * pole[0]
-                    + cartesian_points[[i, 1]] * pole[1]
-                    + cartesian_points[[i, 2]] * pole[2];
-            if dot > max_dot { max_dot = dot; }
-        }
-        if max_dot < 0.9999 {
-            return pole;
-        }
-    }
-
-    // Centroid is near origin or its antipode is too close to a data point.
-    // Draw random candidate poles and keep the best one.
-    let mut rng = rand::rng();
-    let n_candidates = 100;
-    let mut best_pole = [0.0, 0.0, 1.0];
-    let mut best_max_dot = 1.0_f64;
-
-    for _ in 0..n_candidates {
-        // Uniform random point on the sphere (Marsaglia's method)
-        let mut u: f64;
-        let mut v: f64;
-        let mut s: f64;
-        loop {
-            u = 2.0 * rng.random::<f64>() - 1.0;
-            v = 2.0 * rng.random::<f64>() - 1.0;
-            s = u*u + v*v;
-            if s < 1.0 { break; }
-        }
-        let factor = 2.0 * (1.0 - s).sqrt();
-        let candidate = [u * factor, v * factor, 1.0 - 2.0 * s];
-
-        let mut max_dot = -1.0_f64;
-        for i in 0..n {
-            let dot = cartesian_points[[i, 0]] * candidate[0]
-                    + cartesian_points[[i, 1]] * candidate[1]
-                    + cartesian_points[[i, 2]] * candidate[2];
-            if dot > max_dot { max_dot = dot; }
-        }
-        if max_dot < best_max_dot {
-            best_max_dot = max_dot;
-            best_pole = candidate;
-        }
-    }
-
-    best_pole
 }
 
 /// Stereographic projection from a given pole onto the plane through the origin
