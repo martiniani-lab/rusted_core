@@ -62,7 +62,7 @@ pub fn compute_steinhardt_boops_2d(
                 let neigh_vertex = e.to().position();
                 let dx = neigh_vertex.x - xi;
                 let dy = neigh_vertex.y - yi;
-                let mut vector = vec![dx, dy];
+                let mut vector = [dx, dy];
                 if periodic {
                     ensure_periodicity(&mut vector, &box_lengths);
                 }
@@ -381,7 +381,7 @@ pub fn compute_voronoi_quantities_2d(
                 let neigh_vertex = e.to().position();
                 let dx = neigh_vertex.x - xi;
                 let dy = neigh_vertex.y - yi;
-                let mut vector = vec![dx, dy];
+                let mut vector = [dx, dy];
                 if periodic {
                     ensure_periodicity(&mut vector, &box_lengths);
                 }

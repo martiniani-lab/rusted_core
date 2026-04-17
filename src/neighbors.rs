@@ -13,7 +13,7 @@ use spade::Triangulation;
 use rand::RngExt;
 
 use crate::geometry::{
-    vec_no_clone,
+    atomic_add, atomic_read, atomic_vec,
     ensure_periodicity,
     euclidean_from_spherical,
     euclidean_from_spherical_single_point,
@@ -174,7 +174,7 @@ pub fn cluster_by_distance(points_array: &ArrayViewD<'_, f64>, threshold: f64, b
                     let neigh_vertex = e.to().position();
                     let dx = neigh_vertex.x - xi;
                     let dy = neigh_vertex.y - yi;
-                    let mut vector = vec![dx, dy];
+                    let mut vector = [dx, dy];
                     if periodic {
                         ensure_periodicity(&mut vector, &box_lengths);
                     }
@@ -266,8 +266,8 @@ pub fn cluster_by_distance(points_array: &ArrayViewD<'_, f64>, threshold: f64, b
 pub fn point_variances(points: &ArrayViewD<'_, f64>, radii: &ArrayView1<'_, f64>, box_lengths: &Vec<f64>, n_samples: usize, periodic: bool) -> Vec<f64> {
 
     let n_radii = radii.shape()[0];
-    let means  = vec_no_clone![Arc::new(RwLock::new(0.0_f64)); n_radii];
-    let means2 = vec_no_clone![Arc::new(RwLock::new(0.0_f64)); n_radii];
+    let means  = atomic_vec(n_radii);
+    let means2 = atomic_vec(n_radii);
 
     let npoints = points.shape()[0];
     let ndim = points.shape()[1];
@@ -276,65 +276,40 @@ pub fn point_variances(points: &ArrayViewD<'_, f64>, radii: &ArrayView1<'_, f64>
     assert!(ndim < 4);
     assert!(box_lengths.len() == ndim);
 
-    if ndim == 2 { // 2D case
-
-        // Construct the R*-tree, taking into account periodic boundary conditions
-        // See https://en.wikipedia.org/wiki/R-tree and https://en.wikipedia.org/wiki/R*-tree
+    if ndim == 2 {
         let rtree_positions = compute_periodic_rstar_tree(&points, box_lengths[0], box_lengths[1], periodic);
 
-        // Throw points at random: this can be parallelized if necessary
         radii.to_vec().into_iter().enumerate().for_each(|(current_index,radius)| {
-
             (0..n_samples).into_par_iter().for_each( |_sample| {
-
                 let mut rng = rand::rng();
-
-                let mut random: f64 = rng.random();
-                let x_center = random;
-                random = rng.random();
-                let y_center = random;
-
-                let r_center = vec![x_center, y_center];
-                let count = count_points_in_disk(&rtree_positions, r_center, radius);
-
-                *means.get(current_index).unwrap().write().unwrap() += count as f64;
-                *means2.get(current_index).unwrap().write().unwrap() += (count*count) as f64;
-
+                let x_center: f64 = rng.random();
+                let y_center: f64 = rng.random();
+                let count = count_points_in_disk(&rtree_positions, [x_center, y_center], radius);
+                atomic_add(&means[current_index], count as f64);
+                atomic_add(&means2[current_index], (count*count) as f64);
             });
         });
 
-    } else { // 3D case
-
+    } else {
         let rtree_positions = compute_periodic_rstar_tree_3d(&points, box_lengths[0], box_lengths[1], box_lengths[2], periodic);
 
-        // Throw points at random: this can be parallelized if necessary
         radii.to_vec().into_iter().enumerate().for_each(|(current_index,radius)| {
             (0..n_samples).into_par_iter().for_each( |_sample| {
-
                 let mut rng = rand::rng();
-
-                let mut random: f64 = rng.random();
-                let x_center = random;
-                random = rng.random();
-                let y_center = random;
-                random = rng.random();
-                let z_center = random;
-
-                let r_center = vec![x_center, y_center, z_center];
-                let count = count_points_in_ball(&rtree_positions, r_center, radius);
-
-                *means.get(current_index).unwrap().write().unwrap() += count as f64;
-                *means2.get(current_index).unwrap().write().unwrap() += (count*count) as f64;
-
+                let x_center: f64 = rng.random();
+                let y_center: f64 = rng.random();
+                let z_center: f64 = rng.random();
+                let count = count_points_in_ball(&rtree_positions, [x_center, y_center, z_center], radius);
+                atomic_add(&means[current_index], count as f64);
+                atomic_add(&means2[current_index], (count*count) as f64);
             });
         });
     }
 
     let mut reduced_variances = Vec::new();
     for index in 0..n_radii {
-        let current_mean = *means.get(index).unwrap().read().unwrap() / n_samples as f64;
-        let current_mean2 = *means2.get(index).unwrap().read().unwrap() / n_samples as f64;
-
+        let current_mean = atomic_read(&means[index]) / n_samples as f64;
+        let current_mean2 = atomic_read(&means2[index]) / n_samples as f64;
         let reduced_variance = current_mean2/ (current_mean*current_mean) - 1.0;
         reduced_variances.push(reduced_variance)
     }
@@ -404,48 +379,36 @@ pub fn count_metric_neighbors(points: &ArrayViewD<'_, f64>, radii: &ArrayView1<'
 pub fn point_variances_2sphere(points: &ArrayViewD<'_, f64>, radii: &ArrayView1<'_, f64>, n_samples: usize) -> Vec<f64> {
 
     let n_radii = radii.shape()[0];
-    let means  = vec_no_clone![Arc::new(RwLock::new(0.0_f64)); n_radii];
-    let means2 = vec_no_clone![Arc::new(RwLock::new(0.0_f64)); n_radii];
+    let means  = atomic_vec(n_radii);
+    let means2 = atomic_vec(n_radii);
 
     let npoints = points.shape()[0];
     let ndim = points.shape()[1];
 
     assert!(npoints > 1);
-    assert!(ndim == 2, "Expected points in theta, phi representation"); // Expect points in theta, phi representation
+    assert!(ndim == 2, "Expected points in theta, phi representation");
 
     let points_euclidean = euclidean_from_spherical(&points);
     let indices = Array::from_iter(0..npoints);
 
-    // Decorated rstar with index of particle to find spherical coordinates again
     let rtree_positions = compute_decorated_rstar_tree_3d(&points_euclidean.into_dyn().view(), &indices.view(), 2.0, 2.0, 2.0, false);
 
-    // Throw points at random: this can be parallelized if necessary
     radii.to_vec().into_iter().enumerate().for_each(|(current_index,radius)| {
         (0..n_samples).into_par_iter().for_each( |_sample| {
-
             let mut rng = rand::rng();
-
-            let mut random: f64 = rng.random();
-            let phi_center = 2.0 * PI * random;
-            random = rng.random();
-            let theta_center = (2.0 * random - 1.0).acos();
-
+            let phi_center: f64 = 2.0 * PI * rng.random::<f64>();
+            let theta_center = (2.0 * rng.random::<f64>() - 1.0).acos();
             let r_center = [theta_center, phi_center];
-            // The Euclidean distance is a LOWER BOUND of the geodetic distance on the sphere
-            // Thus, all neighbors by the great-circle distance at some cutoff are a subset of the Euclidean neighbors at the same distance
             let count = count_points_in_disk_2sphere(&rtree_positions, &points, r_center, radius);
-
-            *means.get(current_index).unwrap().write().unwrap() += count as f64;
-            *means2.get(current_index).unwrap().write().unwrap() += (count*count) as f64;
-
+            atomic_add(&means[current_index], count as f64);
+            atomic_add(&means2[current_index], (count*count) as f64);
         });
     });
 
     let mut reduced_variances = Vec::new();
     for index in 0..n_radii {
-        let current_mean = *means.get(index).unwrap().read().unwrap() / n_samples as f64;
-        let current_mean2 = *means2.get(index).unwrap().read().unwrap() / n_samples as f64;
-
+        let current_mean = atomic_read(&means[index]) / n_samples as f64;
+        let current_mean2 = atomic_read(&means2[index]) / n_samples as f64;
         let reduced_variance = current_mean2/ (current_mean*current_mean) - 1.0;
         reduced_variances.push(reduced_variance)
     }

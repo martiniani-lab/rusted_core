@@ -4,6 +4,7 @@ use ndarray::parallel::prelude::*;
 use ndarray::{Array, Axis, Dim};
 use std::f64::consts::PI;
 use std::fmt::{Display, Formatter, Result};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 extern crate spade;
 use spade::{Point2, HasPosition};
@@ -12,14 +13,40 @@ extern crate geo;
 
 use rstar::primitives::GeomWithData;
 
-// Vectors of RwLocks cannot be initialized with a clone!
-macro_rules! vec_no_clone {
-    ( $val:expr; $n:expr ) => {{
-        let result: Vec<_> = std::iter::repeat_with(|| $val).take($n).collect();
-        result
-    }};
+/// Atomically add `val` to an AtomicU64 that stores an f64 via bit representation.
+/// Uses a compare-and-swap loop — lock-free and much cheaper than RwLock for accumulation.
+#[inline]
+pub fn atomic_add(atomic: &AtomicU64, val: f64) {
+    let mut old = atomic.load(Ordering::Relaxed);
+    loop {
+        let new = f64::from_bits(old) + val;
+        match atomic.compare_exchange_weak(old, new.to_bits(), Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => break,
+            Err(x) => old = x,
+        }
+    }
 }
-pub(crate) use vec_no_clone;
+
+/// Read the f64 value stored in an AtomicU64.
+#[inline]
+pub fn atomic_read(atomic: &AtomicU64) -> f64 {
+    f64::from_bits(atomic.load(Ordering::Relaxed))
+}
+
+/// Create a Vec of AtomicU64 initialized to 0.0.
+pub fn atomic_vec(n: usize) -> Vec<AtomicU64> {
+    (0..n).map(|_| AtomicU64::new(0.0_f64.to_bits())).collect()
+}
+
+/// Create a Vec<Vec<AtomicU64>> initialized to 0.0.
+pub fn atomic_vec2d(n1: usize, n2: usize) -> Vec<Vec<AtomicU64>> {
+    (0..n1).map(|_| atomic_vec(n2)).collect()
+}
+
+/// Create a Vec<Vec<Vec<AtomicU64>>> initialized to 0.0.
+pub fn atomic_vec3d(n1: usize, n2: usize, n3: usize) -> Vec<Vec<Vec<AtomicU64>>> {
+    (0..n1).map(|_| atomic_vec2d(n2, n3)).collect()
+}
 
 /// Floor a float to a bin index, clamped to [0, nbins-1].
 /// Prevents the off-by-one panic when the value lands exactly on the upper boundary.
@@ -28,7 +55,7 @@ pub fn clamped_bin(value: f64, nbins: usize) -> usize {
     (value.floor() as isize).clamp(0, nbins as isize - 1) as usize
 }
 
-pub fn ensure_periodicity(v: &mut Vec<f64>, box_lengths: &Vec<f64>) {
+pub fn ensure_periodicity(v: &mut [f64], box_lengths: &[f64]) {
 
     v.iter_mut().zip(box_lengths).for_each(|(coord, box_length)| {
 
@@ -41,7 +68,7 @@ pub fn ensure_periodicity(v: &mut Vec<f64>, box_lengths: &Vec<f64>) {
     });
 }
 
-pub fn rdf_normalisation(box_lengths: &Vec<f64>, npoints: usize, bincenter: f64, binsize: f64, periodic: bool) -> f64 {
+pub fn rdf_normalisation(box_lengths: &[f64], npoints: usize, bincenter: f64, binsize: f64, periodic: bool) -> f64 {
 
     let ndim = box_lengths.len();
     let volume: f64 = box_lengths.iter().product();

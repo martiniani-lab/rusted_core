@@ -1,7 +1,6 @@
 use ndarray::parallel::prelude::*;
 use numpy::ndarray::{ArrayView1, ArrayViewD};
 use std::fmt::Display;
-use std::sync::{Arc, RwLock};
 
 extern crate spade;
 use spade::{DelaunayTriangulation, Point2};
@@ -23,56 +22,29 @@ pub fn compute_periodic_rstar_tree(
     periodic: bool
 ) -> RTree<[f64;2]> {
 
-
-    // Create an empty for the vector of points to load into the tree
-    // let mut points_vector: Vec<Point2<f64>> = Vec::new();
-    // let mut points_vector: Arc<RwLock<Vec<Point2<f64>>>> = Arc::new(RwLock::new(Vec::new()));
-    let points_vector: Arc<RwLock<Vec<[f64;2]>>> = Arc::new(RwLock::new(Vec::new()));
-
     let n_copies: usize = if periodic { 9 } else { 1 };
-    // Get the number of particles from positions, and consider 9 copies of the system to take into account the PBCs
     let n_particles = positions.shape()[0];
-    (0..n_copies*n_particles).into_par_iter().for_each(|i| {
-    // for i in 0..9 * n_particles {
+
+    let points_vector: Vec<[f64;2]> = (0..n_copies*n_particles).into_par_iter().filter_map(|i| {
         let index = i % n_particles;
         let quotient = i / n_particles;
-        let nx = match quotient / 3 {
-            0 => 0.0,
-            1 => -1.0,
-            2 => 1.0,
-            _ => 2.0,
-        };
-        let ny = match quotient % 3 {
-            0 => 0.0,
-            1 => -1.0,
-            2 => 1.0,
-            _ => 2.0,
-        };
+        let nx = match quotient / 3 { 0 => 0.0, 1 => -1.0, 2 => 1.0, _ => unreachable!() };
+        let ny = match quotient % 3 { 0 => 0.0, 1 => -1.0, 2 => 1.0, _ => unreachable!() };
 
-        assert!(nx < 2.0 && ny < 2.0, "Unexpected error when cloning boxes.");
-
-        let shifted_x: f64 = positions[[index, 0]] + nx * box_size_x;
-        let shifted_y: f64 = positions[[index, 1]] + ny * box_size_y;
+        let shifted_x = positions[[index, 0]] + nx * box_size_x;
+        let shifted_y = positions[[index, 1]] + ny * box_size_y;
 
         let is_in_x = shifted_x >= -0.5 * box_size_x && shifted_x <= 1.5 * box_size_x;
         let is_in_y = shifted_y >= -0.5 * box_size_y && shifted_y <= 1.5 * box_size_y;
 
         if is_in_x && is_in_y {
-
-            // let newpoint: Point2<f64> = Point2::new(shifted_x, shifted_y);
-            let newpoint = [shifted_x, shifted_y];
-
-            // points_vector.push(newpoint);
-            points_vector.write().unwrap().push(newpoint);
+            Some([shifted_x, shifted_y])
+        } else {
+            None
         }
-    // }
-    });
+    }).collect();
 
-    //Bulk-load the vector into a new rtree, then return it
-    // It's apparently better? http://ftp.informatik.rwth-aachen.de/Publications/CEUR-WS/Vol-74/files/FORUM_18.pdf
-    let rtree = RTree::bulk_load(points_vector.read().unwrap().to_vec());
-
-    rtree
+    RTree::bulk_load(points_vector)
 }
 
 
@@ -84,17 +56,10 @@ pub fn compute_periodic_rstar_tree_3d(
     periodic: bool
 ) -> RTree<[f64;3]> {
 
-
-    // Create an empty for the vector of points to load into the tree
-    // let mut points_vector: Vec<Point2<f64>> = Vec::new();
-    // let mut points_vector: Arc<RwLock<Vec<Point3<f64>>>> = Arc::new(RwLock::new(Vec::new()));
-    let points_vector: Arc<RwLock<Vec<[f64;3]>>> = Arc::new(RwLock::new(Vec::new()));
-
-    // Get the number of particles from positions, and consider 27 copies of the system to take into account the PBCs
     let n_copies: usize = if periodic { 27 } else { 1 };
     let n_particles = positions.shape()[0];
-    (0..n_copies*n_particles).into_par_iter().for_each(|i| {
 
+    let points_vector: Vec<[f64;3]> = (0..n_copies*n_particles).into_par_iter().filter_map(|i| {
         let index = i % n_particles;
         let quotient = i / n_particles;
         let triplet_1 = quotient % 3;
@@ -102,135 +67,75 @@ pub fn compute_periodic_rstar_tree_3d(
         let triplet_2 = nonuplet % 3;
         let triplet_3 = nonuplet / 3;
 
-        let nx = match triplet_1 {
-            0 => 0.0,
-            1 => -1.0,
-            2 => 1.0,
-            _ => 2.0,
-        };
-        let ny = match triplet_2 {
-            0 => 0.0,
-            1 => -1.0,
-            2 => 1.0,
-            _ => 2.0,
-        };
-        let nz = match triplet_3 {
-            0 => 0.0,
-            1 => -1.0,
-            2 => 1.0,
-            _ => 2.0,
-        };
+        let nx = match triplet_1 { 0 => 0.0, 1 => -1.0, 2 => 1.0, _ => unreachable!() };
+        let ny = match triplet_2 { 0 => 0.0, 1 => -1.0, 2 => 1.0, _ => unreachable!() };
+        let nz = match triplet_3 { 0 => 0.0, 1 => -1.0, 2 => 1.0, _ => unreachable!() };
 
-        assert!(nx < 2.0 && ny < 2.0 && nz < 2.0, "Unexpected error when cloning boxes.");
-
-        let shifted_x: f64 = positions[[index, 0]] + nx * box_size_x;
-        let shifted_y: f64 = positions[[index, 1]] + ny * box_size_y;
-        let shifted_z: f64 = positions[[index, 2]] + nz * box_size_z;
+        let shifted_x = positions[[index, 0]] + nx * box_size_x;
+        let shifted_y = positions[[index, 1]] + ny * box_size_y;
+        let shifted_z = positions[[index, 2]] + nz * box_size_z;
 
         let is_in_x = shifted_x >= -0.5 * box_size_x && shifted_x <= 1.5 * box_size_x;
         let is_in_y = shifted_y >= -0.5 * box_size_y && shifted_y <= 1.5 * box_size_y;
         let is_in_z = shifted_z >= -0.5 * box_size_z && shifted_z <= 1.5 * box_size_z;
 
         if is_in_x && is_in_y && is_in_z {
-
-            // let newpoint: Point3<f64> = Point3::new(shifted_x, shifted_y, shifted_z);
-            let newpoint = [shifted_x, shifted_y, shifted_z];
-
-            // points_vector.push(newpoint);
-            points_vector.write().unwrap().push(newpoint);
+            Some([shifted_x, shifted_y, shifted_z])
+        } else {
+            None
         }
-    // }
-    });
+    }).collect();
 
-    //Bulk-load the vector into a new rtree, then return it
-    // It's apparently better? http://ftp.informatik.rwth-aachen.de/Publications/CEUR-WS/Vol-74/files/FORUM_18.pdf
-    let rtree = RTree::bulk_load(points_vector.read().unwrap().to_vec());
-
-    rtree
+    RTree::bulk_load(points_vector)
 }
 
 pub fn compute_decorated_rstar_tree<T: Display + Send + Sync + Copy>(
     positions: &ArrayViewD<'_, f64>,
-    field: &ArrayView1<'_, T>, // Assumed scalar for now
+    field: &ArrayView1<'_, T>,
     box_size_x: f64,
     box_size_y: f64,
     periodic: bool
 ) -> RTree<ListPointWithTag<T, 2>> {
 
-
-    // Create an empty for the vector of points to load into the tree
-    // let mut points_vector: Vec<Point2<f64>> = Vec::new();
-    // let mut points_vector: Arc<RwLock<Vec<Point2<f64>>>> = Arc::new(RwLock::new(Vec::new()));
-    let tagged_points_vector: Arc<RwLock<Vec<ListPointWithTag<T, 2>>>> = Arc::new(RwLock::new(Vec::new()));
-
     let n_copies: usize = if periodic { 9 } else { 1 };
-    // Get the number of particles from positions, and consider 9 copies of the system to take into account the PBCs
     let n_particles = positions.shape()[0];
-    (0..n_copies*n_particles).into_par_iter().for_each(|i| {
-    // for i in 0..9 * n_particles {
+
+    let tagged_points_vector: Vec<ListPointWithTag<T, 2>> = (0..n_copies*n_particles).into_par_iter().filter_map(|i| {
         let index = i % n_particles;
         let quotient = i / n_particles;
-        let nx = match quotient / 3 {
-            0 => 0.0,
-            1 => -1.0,
-            2 => 1.0,
-            _ => 2.0,
-        };
-        let ny = match quotient % 3 {
-            0 => 0.0,
-            1 => -1.0,
-            2 => 1.0,
-            _ => 2.0,
-        };
+        let nx = match quotient / 3 { 0 => 0.0, 1 => -1.0, 2 => 1.0, _ => unreachable!() };
+        let ny = match quotient % 3 { 0 => 0.0, 1 => -1.0, 2 => 1.0, _ => unreachable!() };
 
-        assert!(nx < 2.0 && ny < 2.0, "Unexpected error when cloning boxes.");
-
-        let shifted_x: f64 = positions[[index, 0]] + nx * box_size_x;
-        let shifted_y: f64 = positions[[index, 1]] + ny * box_size_y;
+        let shifted_x = positions[[index, 0]] + nx * box_size_x;
+        let shifted_y = positions[[index, 1]] + ny * box_size_y;
 
         let is_in_x = shifted_x >= -0.5 * box_size_x && shifted_x <= 1.5 * box_size_x;
         let is_in_y = shifted_y >= -0.5 * box_size_y && shifted_y <= 1.5 * box_size_y;
 
         if is_in_x && is_in_y {
-
-            // let newpoint: Point2<f64> = Point2::new(shifted_x, shifted_y);
-            let newpoint = [shifted_x, shifted_y];
-            let new_tagged_point = ListPointWithTag::new(newpoint, field[[index]]);
-
-            // points_vector.push(newpoint);
-            tagged_points_vector.write().unwrap().push(new_tagged_point);
+            Some(ListPointWithTag::new([shifted_x, shifted_y], field[[index]]))
+        } else {
+            None
         }
-    // }
-    });
+    }).collect();
 
-    //Bulk-load the vector into a new rtree, then return it
-    // It's apparently better? http://ftp.informatik.rwth-aachen.de/Publications/CEUR-WS/Vol-74/files/FORUM_18.pdf
-    let rtree = RTree::bulk_load(tagged_points_vector.read().unwrap().to_vec());
-
-    rtree
+    RTree::bulk_load(tagged_points_vector)
 }
 
 
 pub fn compute_decorated_rstar_tree_3d<T: Display + Send + Sync + Copy>(
     positions: &ArrayViewD<'_, f64>,
-    field: &ArrayView1<'_, T>, // Assumed scalar for now
+    field: &ArrayView1<'_, T>,
     box_size_x: f64,
     box_size_y: f64,
     box_size_z: f64,
     periodic: bool
 ) -> RTree<ListPointWithTag<T, 3>> {
 
-
-    // Create an empty for the vector of points to load into the tree
-    // let mut points_vector: Vec<Point2<f64>> = Vec::new();
-    // let mut points_vector: Arc<RwLock<Vec<Point3<f64>>>> = Arc::new(RwLock::new(Vec::new()));
-    let tagged_points_vector: Arc<RwLock<Vec<ListPointWithTag<T,3>>>> = Arc::new(RwLock::new(Vec::new()));
-
-    // Get the number of particles from positions, and consider 27 copies of the system to take into account the PBCs
     let n_copies: usize = if periodic { 27 } else { 1 };
     let n_particles = positions.shape()[0];
-    (0..n_copies*n_particles).into_par_iter().for_each(|i| {
 
+    let tagged_points_vector: Vec<ListPointWithTag<T,3>> = (0..n_copies*n_particles).into_par_iter().filter_map(|i| {
         let index = i % n_particles;
         let quotient = i / n_particles;
         let triplet_1 = quotient % 3;
@@ -238,52 +143,26 @@ pub fn compute_decorated_rstar_tree_3d<T: Display + Send + Sync + Copy>(
         let triplet_2 = nonuplet % 3;
         let triplet_3 = nonuplet / 3;
 
-        let nx = match triplet_1 {
-            0 => 0.0,
-            1 => -1.0,
-            2 => 1.0,
-            _ => 2.0,
-        };
-        let ny = match triplet_2 {
-            0 => 0.0,
-            1 => -1.0,
-            2 => 1.0,
-            _ => 2.0,
-        };
-        let nz = match triplet_3 {
-            0 => 0.0,
-            1 => -1.0,
-            2 => 1.0,
-            _ => 2.0,
-        };
+        let nx = match triplet_1 { 0 => 0.0, 1 => -1.0, 2 => 1.0, _ => unreachable!() };
+        let ny = match triplet_2 { 0 => 0.0, 1 => -1.0, 2 => 1.0, _ => unreachable!() };
+        let nz = match triplet_3 { 0 => 0.0, 1 => -1.0, 2 => 1.0, _ => unreachable!() };
 
-        assert!(nx < 2.0 && ny < 2.0 && nz < 2.0, "Unexpected error when cloning boxes.");
-
-        let shifted_x: f64 = positions[[index, 0]] + nx * box_size_x;
-        let shifted_y: f64 = positions[[index, 1]] + ny * box_size_y;
-        let shifted_z: f64 = positions[[index, 2]] + nz * box_size_z;
+        let shifted_x = positions[[index, 0]] + nx * box_size_x;
+        let shifted_y = positions[[index, 1]] + ny * box_size_y;
+        let shifted_z = positions[[index, 2]] + nz * box_size_z;
 
         let is_in_x = shifted_x >= -0.5 * box_size_x && shifted_x <= 1.5 * box_size_x;
         let is_in_y = shifted_y >= -0.5 * box_size_y && shifted_y <= 1.5 * box_size_y;
         let is_in_z = shifted_z >= -0.5 * box_size_z && shifted_z <= 1.5 * box_size_z;
 
         if is_in_x && is_in_y && is_in_z {
-
-            // let newpoint: Point3<f64> = Point3::new(shifted_x, shifted_y, shifted_z);
-            let newpoint = [shifted_x, shifted_y, shifted_z];
-            let new_tagged_point = ListPointWithTag::new(newpoint, field[[index]]);
-
-            // points_vector.push(newpoint);
-            tagged_points_vector.write().unwrap().push(new_tagged_point);
+            Some(ListPointWithTag::new([shifted_x, shifted_y, shifted_z], field[[index]]))
+        } else {
+            None
         }
-    // }
-    });
+    }).collect();
 
-    //Bulk-load the vector into a new rtree, then return it
-    // It's apparently better? http://ftp.informatik.rwth-aachen.de/Publications/CEUR-WS/Vol-74/files/FORUM_18.pdf
-    let rtree = RTree::bulk_load(tagged_points_vector.read().unwrap().to_vec());
-
-    rtree
+    RTree::bulk_load(tagged_points_vector)
 }
 
 pub fn create_delaunay_with_tags<T: Display + Send + Sync + Copy>(points_array: &ArrayViewD<'_, f64>, tags: &Vec<T>, periodic: bool, box_lengths: &Vec<f64>)
@@ -444,29 +323,12 @@ pub fn create_delaunay_sphere(
     (DelaunayTriangulation::<PointWithTag<usize>>::bulk_load_stable(points).unwrap(), pole_idx)
 }
 
-pub fn count_points_in_disk(rtree: &RTree<[f64;2]>, r_center: Vec<f64>, radius: f64) -> usize {
-
-    let centerpoint = [r_center[0], r_center[1]];
-
-    // let points = rtree.lookup_in_circle(&centerpoint, &(radius*radius));
-    let points = rtree.locate_within_distance(centerpoint, radius*radius).collect::<Vec<_>>();
-    // let count = points.len();
-    let count = points.len();
-
-    return count
+pub fn count_points_in_disk(rtree: &RTree<[f64;2]>, r_center: [f64; 2], radius: f64) -> usize {
+    rtree.locate_within_distance(r_center, radius*radius).count()
 }
 
-pub fn count_points_in_ball(rtree: &RTree<[f64;3]>, r_center: Vec<f64>, radius: f64) -> usize {
-
-    // let centerpoint: Point3<f64> = Point3::new(r_center[0], r_center[1], r_center[2]);
-    let centerpoint = [r_center[0], r_center[1], r_center[2]];
-
-    // let points = rtree.lookup_in_circle(&centerpoint, &(radius*radius));
-    let points = rtree.locate_within_distance(centerpoint, radius*radius).collect::<Vec<_>>();
-    // let count = points.len();
-    let count = points.len();
-
-    return count
+pub fn count_points_in_ball(rtree: &RTree<[f64;3]>, r_center: [f64; 3], radius: f64) -> usize {
+    rtree.locate_within_distance(r_center, radius*radius).count()
 }
 
 pub fn count_points_in_disk_2sphere(rtree: &RTree<GeomWithData<[f64;3],usize>>, spherical_points: &ArrayViewD<'_, f64>, centerpoint_spherical: [f64; 2], radius: f64) -> usize {
