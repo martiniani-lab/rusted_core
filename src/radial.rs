@@ -363,15 +363,18 @@ pub fn compute_radial_correlations_2sphere(
         mean_field[dim] = fields.slice(s![.., dim]).into_par_iter().sum::<f64>() / n_particles as f64;
     }
 
+    // Precompute sin/cos for all particles to avoid redundant trig in the inner loop
+    let cos_theta: Vec<f64> = (0..n_particles).map(|i| points[[i, 0]].cos()).collect();
+    let sin_theta: Vec<f64> = (0..n_particles).map(|i| points[[i, 0]].sin()).collect();
+    let phi: Vec<f64> = (0..n_particles).map(|i| points[[i, 1]]).collect();
+
     // go through all pairs just once for all correlations and compute both rdf and the correlation
     (0..n_particles).into_par_iter().for_each(|i| {
+        let ct_i = cos_theta[i];
+        let st_i = sin_theta[i];
+        let phi_i = phi[i];
         for j in i + 1..n_particles {
-            let thetai = points[[i, 0]];
-            let thetaj = points[[j, 0]];
-            let phii = points[[i, 1]];
-            let phij = points[[j, 1]];
-
-            let mut cos_dist_ij = thetai.cos() * thetaj.cos() + thetai.sin()* thetaj.sin() * (phii - phij).cos();
+            let mut cos_dist_ij = ct_i * cos_theta[j] + st_i * sin_theta[j] * (phi_i - phi[j]).cos();
             if cos_dist_ij < -1.0 {
                 cos_dist_ij = -1.0;
             } else if cos_dist_ij > 1.0 {

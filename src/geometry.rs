@@ -1,4 +1,3 @@
-use ang::atan2;
 use numpy::ndarray::ArrayViewD;
 use ndarray::parallel::prelude::*;
 use ndarray::{Array, Axis, Dim};
@@ -143,23 +142,30 @@ pub fn rdf_normalisation(box_lengths: &[f64], npoints: usize, bincenter: f64, bi
 
 }
 
-pub fn relative_distance_vec_spherical(thetaref: f64, phiref: f64, theta: f64, phi: f64) -> (f64, f64) {
+/// Relative angular displacement on the sphere.
+/// Accepts precomputed sin/cos of the reference point to avoid redundant trig in inner loops.
+pub fn relative_distance_vec_spherical_precomp(
+    sin_thetaref: f64, cos_thetaref: f64,
+    sin_phiref: f64, cos_phiref: f64,
+    theta: f64, phi: f64,
+) -> (f64, f64) {
+    let st = theta.sin();
+    let r = [st * phi.cos(), st * phi.sin(), theta.cos()];
 
-    // I think it's necessary to go through Cartesian for this unfortunately
-    let r = vec![theta.sin() * phi.cos(),theta.sin() * phi.sin(),theta.cos()];
+    // Rotate by -phiref around z
+    let r1_0 = r[0]*cos_phiref + r[1]*sin_phiref;
+    let r1_1 = -r[0]*sin_phiref + r[1]*cos_phiref;
+    let r1_2 = r[2];
 
-    // Rotate by -phiref around z first
-    let r_rotated_once = vec![r[0]*phiref.cos() + r[1] * phiref.sin(), - r[0] * phiref.sin() + r[1] * phiref.cos(), r[2] ];
+    // Rotate by +thetaref around y
+    let r2_0 = r1_0*cos_thetaref - r1_2*sin_thetaref;
+    let r2_1 = r1_1;
+    let r2_2 = r1_0*sin_thetaref + r1_2*cos_thetaref;
 
-    // Rotate by +thetaref around y then
-    let r_rotated_twice = vec![r_rotated_once[0]*thetaref.cos() - r_rotated_once[2] * thetaref.sin(),r_rotated_once[1],r_rotated_once[0]*thetaref.sin() + r_rotated_once[2] * thetaref.cos()];
-
-    // Measure the spherical angles of the newly obtained vector
-    let theta_relative = r_rotated_twice[2].acos();
-    let phi_relative = atan2(r_rotated_twice[1], r_rotated_twice[0]).in_radians() + PI;
+    let theta_relative = r2_2.acos();
+    let phi_relative = r2_1.atan2(r2_0) + PI;
 
     (theta_relative, phi_relative)
-
 }
 
 pub fn great_circle_distance(point1: &[f64;2], point2: &[f64;2]) -> f64 {

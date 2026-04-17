@@ -9,7 +9,7 @@ use crate::geometry::{
     atomic_add, atomic_read, atomic_vec2d, atomic_vec3d,
     clamped_bin,
     ensure_periodicity,
-    relative_distance_vec_spherical,
+    relative_distance_vec_spherical_precomp,
 };
 use crate::spatial::{
     compute_periodic_rstar_tree,
@@ -544,9 +544,13 @@ pub fn compute_vector_rdf_2sphere(
     let rdf = atomic_vec2d(nbins_theta, nbins_phi);
 
     (0..n_particles).into_par_iter().for_each(|i| {
+        let thetai = points[[i, 0]];
+        let phii = points[[i, 1]];
+        let (sin_ti, cos_ti) = (thetai.sin(), thetai.cos());
+        let (sin_pi, cos_pi) = (phii.sin(), phii.cos());
         for j in 0..n_particles {
-            let (dist_theta, dist_phi) = relative_distance_vec_spherical(
-                points[[i, 0]], points[[i, 1]], points[[j, 0]], points[[j, 1]]);
+            let (dist_theta, dist_phi) = relative_distance_vec_spherical_precomp(
+                sin_ti, cos_ti, sin_pi, cos_pi, points[[j, 0]], points[[j, 1]]);
 
             let index_x = clamped_bin(dist_theta / binsize, nbins_theta);
             let index_y = clamped_bin(dist_phi / binsize, nbins_phi);
