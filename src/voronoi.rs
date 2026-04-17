@@ -227,13 +227,40 @@ pub fn compute_voronoi_quantities_2sphere(
                         circumcenters.push(spherical_circumcenter(
                             &cart(v0.data().tag), &cart(v1.data().tag), &cart(v2.data().tag)));
                     } else {
-                        // Outer face replaces TWO stitched triangles:
-                        //   (i, hull_neigh_a, pole) and (i, hull_neigh_b, pole)
-                        // where hull_neigh_a and hull_neigh_b are i's two hull-adjacent neighbors.
+                        // Outer face replaces TWO stitched triangles.
+                        // The inner circumcenters before and after this gap are already
+                        // in the right cyclic order — we just need to order the two
+                        // stitched circumcenters correctly within the gap.
                         assert!(my_hull_neighbors.len() == 2,
                             "Hull vertex should have exactly 2 hull neighbors");
-                        circumcenters.push(spherical_circumcenter(&pi, &cart(my_hull_neighbors[0]), &pole_cart));
-                        circumcenters.push(spherical_circumcenter(&pi, &cart(my_hull_neighbors[1]), &pole_cart));
+                        let sa = spherical_circumcenter(&pi, &cart(my_hull_neighbors[0]), &pole_cart);
+                        let sb = spherical_circumcenter(&pi, &cart(my_hull_neighbors[1]), &pole_cart);
+
+                        // Pick the order that matches the winding: the first stitched
+                        // circumcenter should be angularly closer to the last inner one.
+                        let prev_cc = if circumcenters.is_empty() {
+                            // Outer face is the first in the sequence — the "previous"
+                            // circumcenter wraps around from the last inner face
+                            let last_inner_k = (0..n_edges).rev()
+                                .find(|&j| edges_vec[j].face().as_inner().is_some())
+                                .unwrap();
+                            let [v0, v1, v2] = edges_vec[last_inner_k].face().as_inner().unwrap().vertices();
+                            spherical_circumcenter(&cart(v0.data().tag), &cart(v1.data().tag), &cart(v2.data().tag))
+                        } else {
+                            *circumcenters.last().unwrap()
+                        };
+
+                        // Check angular distance from prev_cc to sa vs sb
+                        let dot_a = sa[0]*prev_cc[0] + sa[1]*prev_cc[1] + sa[2]*prev_cc[2];
+                        let dot_b = sb[0]*prev_cc[0] + sb[1]*prev_cc[1] + sb[2]*prev_cc[2];
+                        if dot_a >= dot_b {
+                            // sa is closer to prev_cc → sa comes first
+                            circumcenters.push(sa);
+                            circumcenters.push(sb);
+                        } else {
+                            circumcenters.push(sb);
+                            circumcenters.push(sa);
+                        }
                     }
                 }
             }
@@ -679,13 +706,33 @@ pub fn voronoi_tessellation_2sphere(
                         cell_indices.push(voro_idx);
                     }
                 } else {
-                    // Outer face: TWO stitched circumcenters from hull neighbors
-                    for &hn in &my_hull_neighbors {
-                        let cc = spherical_circumcenter(&cart(i), &cart(hn), &pole_cart);
-                        let vi = all_vertices.len();
-                        all_vertices.push(cc);
-                        cell_indices.push(vi);
-                    }
+                    // Outer face: TWO stitched circumcenters, ordered to match winding
+                    let sa = spherical_circumcenter(&cart(i), &cart(my_hull_neighbors[0]), &pole_cart);
+                    let sb = spherical_circumcenter(&cart(i), &cart(my_hull_neighbors[1]), &pole_cart);
+
+                    let prev_cc = if cell_indices.len() > *cell_offsets.last().unwrap() {
+                        let last_vi = cell_indices[cell_indices.len() - 1];
+                        all_vertices[last_vi]
+                    } else {
+                        // Wrap: find the last inner face's circumcenter
+                        let last_inner_k = (0..n_edges).rev()
+                            .find(|&j| edges_vec[j].face().as_inner().is_some())
+                            .unwrap();
+                        let inner_face = edges_vec[last_inner_k].face().as_inner().unwrap();
+                        let [v0, v1, v2] = inner_face.vertices();
+                        spherical_circumcenter(&cart(v0.data().tag), &cart(v1.data().tag), &cart(v2.data().tag))
+                    };
+
+                    let dot_a = sa[0]*prev_cc[0] + sa[1]*prev_cc[1] + sa[2]*prev_cc[2];
+                    let dot_b = sb[0]*prev_cc[0] + sb[1]*prev_cc[1] + sb[2]*prev_cc[2];
+                    let (first, second) = if dot_a >= dot_b { (sa, sb) } else { (sb, sa) };
+
+                    let vi1 = all_vertices.len();
+                    all_vertices.push(first);
+                    cell_indices.push(vi1);
+                    let vi2 = all_vertices.len();
+                    all_vertices.push(second);
+                    cell_indices.push(vi2);
                 }
             }
         }
