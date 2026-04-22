@@ -13,15 +13,21 @@ extern crate geo;
 use geo::algorithm::area::Area;
 use geo::{LineString, Polygon};
 
+use std::f64::consts::PI;
+
 use crate::geometry::{
     ensure_periodicity,
     euclidean_from_spherical,
     tangent_frame,
     spherical_triangle_area,
     spherical_circumcenter,
+    spherical_harmonic,
     great_circle_distance,
 };
-use crate::spatial::{create_delaunay, create_delaunay_sphere};
+use crate::spatial::{
+    create_delaunay, create_delaunay_sphere,
+    compute_periodic_rstar_tree, compute_periodic_rstar_tree_3d,
+};
 
 pub fn compute_steinhardt_boops_2d(
     points_array: &ArrayViewD<'_, f64>,
@@ -743,4 +749,150 @@ pub fn voronoi_tessellation_2sphere(
     let edges_flat: Vec<usize> = edges.iter().flat_map(|e| e.iter().copied()).collect();
 
     (vertices_flat, edges_flat, cell_indices, cell_offsets)
+}
+
+/// 2D Bond-Orientational Order Parameters using a metric (distance) cutoff
+/// for neighbor determination via R*-tree, instead of Delaunay/Voronoi.
+///
+/// Output shape: (N, n_orders, 2) — complex ψ_n per particle, same as
+/// `compute_steinhardt_boops_2d`.
+pub fn compute_metric_boops_2d(
+    points_array: &ArrayViewD<'_, f64>,
+    boop_order_array: &ArrayViewD<'_, isize>,
+    box_size_x: f64,
+    box_size_y: f64,
+    cutoff: f64,
+    periodic: bool,
+) -> Array<f64, Dim<[usize; 3]>> {
+    let n_particles = points_array.shape()[0];
+    let boop_orders_number = boop_order_array.shape()[0];
+    let box_lengths = [box_size_x, box_size_y];
+
+    let mut boop_vectors = Array::<f64, _>::zeros((n_particles, boop_orders_number, 2).f());
+
+    let rtree = compute_periodic_rstar_tree(points_array, box_size_x, box_size_y, periodic);
+    let cutoff2 = cutoff * cutoff;
+
+    boop_vectors
+        .axis_iter_mut(Axis(0))
+        .into_par_iter()
+        .enumerate()
+        .for_each(|(i, mut boops_i)| {
+            let xi = points_array[[i, 0]];
+            let yi = points_array[[i, 1]];
+
+            let mut neighbour_count = 0;
+            let mut iter = rtree.nearest_neighbor_iter_with_distance_2(&[xi, yi]).skip(1);
+            loop {
+                let (neighbor, dist2) = iter.next().unwrap();
+                if dist2 > cutoff2 { break; }
+                neighbour_count += 1;
+
+                let mut r_ij = [neighbor[0] - xi, neighbor[1] - yi];
+                if periodic {
+                    ensure_periodicity(&mut r_ij, &box_lengths);
+                }
+
+                let theta = atan2(r_ij[1], r_ij[0]);
+
+                for n in 0..boop_orders_number {
+                    let order = boop_order_array[[n]] as f64;
+                    let angle = order * theta;
+                    boops_i[[n, 0]] += angle.cos();
+                    boops_i[[n, 1]] += angle.sin();
+                }
+            }
+
+            if neighbour_count > 0 {
+                for n in 0..boop_orders_number {
+                    boops_i[[n, 0]] /= neighbour_count as f64;
+                    boops_i[[n, 1]] /= neighbour_count as f64;
+                }
+            }
+        });
+
+    boop_vectors
+}
+
+/// 3D Steinhardt Bond-Orientational Order Parameters using a metric (distance)
+/// cutoff for neighbor determination via R*-tree, instead of Delaunay.
+///
+/// Computes q_l(i) = sqrt(4π/(2l+1) Σ_{m=-l}^{l} |q_lm(i)|²)
+/// where q_lm(i) = (1/N_nb) Σ_{j∈neighbors} Y_lm(θ_ij, φ_ij).
+///
+/// Output shape: (N, n_orders) — scalar q_l per particle.
+pub fn compute_metric_boops_3d(
+    points_array: &ArrayViewD<'_, f64>,
+    boop_order_array: &ArrayViewD<'_, isize>,
+    box_size_x: f64,
+    box_size_y: f64,
+    box_size_z: f64,
+    cutoff: f64,
+    periodic: bool,
+) -> Array<f64, Dim<[usize; 2]>> {
+    let n_particles = points_array.shape()[0];
+    let n_orders = boop_order_array.shape()[0];
+    let box_lengths = [box_size_x, box_size_y, box_size_z];
+
+    let mut ql_array = Array::<f64, _>::zeros((n_particles, n_orders).f());
+
+    let rtree = compute_periodic_rstar_tree_3d(
+        points_array, box_size_x, box_size_y, box_size_z, periodic);
+    let cutoff2 = cutoff * cutoff;
+
+    ql_array
+        .axis_iter_mut(Axis(0))
+        .into_par_iter()
+        .enumerate()
+        .for_each(|(i, mut ql_i)| {
+            let xi = points_array[[i, 0]];
+            let yi = points_array[[i, 1]];
+            let zi = points_array[[i, 2]];
+
+            // Collect neighbors within cutoff
+            let mut neighbors: Vec<[f64; 3]> = Vec::new();
+            let mut iter = rtree.nearest_neighbor_iter_with_distance_2(
+                &[xi, yi, zi]).skip(1);
+            loop {
+                let (neighbor, dist2) = iter.next().unwrap();
+                if dist2 > cutoff2 { break; }
+                let mut r_ij = [neighbor[0] - xi, neighbor[1] - yi, neighbor[2] - zi];
+                if periodic {
+                    ensure_periodicity(&mut r_ij, &box_lengths);
+                }
+                neighbors.push(r_ij);
+            }
+
+            let n_nb = neighbors.len();
+            if n_nb == 0 { return; }
+
+            for (n_ord, &order) in boop_order_array.iter().enumerate() {
+                let l = order as usize;
+                let mut ql_sum = 0.0;
+
+                for m in -(l as isize)..=(l as isize) {
+                    let mut re = 0.0;
+                    let mut im = 0.0;
+
+                    for r_ij in &neighbors {
+                        let dist = (r_ij[0]*r_ij[0] + r_ij[1]*r_ij[1]
+                                  + r_ij[2]*r_ij[2]).sqrt();
+                        let cos_theta = r_ij[2] / dist;
+                        let phi = r_ij[1].atan2(r_ij[0]);
+
+                        let (ylm_re, ylm_im) = spherical_harmonic(l, m, cos_theta, phi);
+                        re += ylm_re;
+                        im += ylm_im;
+                    }
+
+                    re /= n_nb as f64;
+                    im /= n_nb as f64;
+                    ql_sum += re * re + im * im;
+                }
+
+                ql_i[n_ord] = (4.0 * PI / (2 * l + 1) as f64 * ql_sum).sqrt();
+            }
+        });
+
+    ql_array
 }

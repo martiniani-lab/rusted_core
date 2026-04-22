@@ -289,6 +289,71 @@ pub fn spherical_circumcenter(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3]) -> [f64;
     cc
 }
 
+// --- Spherical harmonics for 3D Steinhardt BOOPs ---
+
+/// Associated Legendre polynomial P_l^m(x) via the standard recurrence.
+/// Includes the Condon-Shortley phase (-1)^m.
+pub fn associated_legendre(l: usize, m: usize, x: f64) -> f64 {
+    if m > l { return 0.0; }
+
+    // Start with P_m^m(x) = (-1)^m (2m-1)!! (1-x^2)^{m/2}
+    let mut pmm = 1.0;
+    if m > 0 {
+        let somx2 = ((1.0 - x) * (1.0 + x)).sqrt();
+        let mut fact = 1.0;
+        for _ in 0..m {
+            pmm *= -fact * somx2;
+            fact += 2.0;
+        }
+    }
+    if l == m { return pmm; }
+
+    // P_{m+1}^m(x) = x (2m+1) P_m^m(x)
+    let mut pmmp1 = x * (2 * m + 1) as f64 * pmm;
+    if l == m + 1 { return pmmp1; }
+
+    // Recurrence for l > m+1
+    let mut pll = 0.0;
+    for ll in (m + 2)..=l {
+        pll = (x * (2 * ll - 1) as f64 * pmmp1 - (ll + m - 1) as f64 * pmm)
+            / (ll - m) as f64;
+        pmm = pmmp1;
+        pmmp1 = pll;
+    }
+    pll
+}
+
+/// Compute (l-m)! / (l+m)! as a running product to avoid large factorials.
+fn factorial_ratio(num_top: usize, num_bot: usize) -> f64 {
+    let mut result = 1.0;
+    for k in (num_top + 1)..=num_bot {
+        result /= k as f64;
+    }
+    result
+}
+
+/// Complex spherical harmonic Y_l^m(cos_theta, phi).
+/// Returns (Re, Im).
+pub fn spherical_harmonic(l: usize, m: isize, cos_theta: f64, phi: f64) -> (f64, f64) {
+    let abs_m = m.unsigned_abs();
+    let plm = associated_legendre(l, abs_m, cos_theta);
+
+    // Normalization: sqrt((2l+1)/(4π) · (l-|m|)!/(l+|m|)!)
+    let prefactor = ((2 * l + 1) as f64 / (4.0 * PI)
+        * factorial_ratio(l - abs_m, l + abs_m))
+        .sqrt()
+        * plm;
+
+    let m_phi = abs_m as f64 * phi;
+    if m >= 0 {
+        (prefactor * m_phi.cos(), prefactor * m_phi.sin())
+    } else {
+        // Y_l^{-|m|} = (-1)^|m| conj(Y_l^{|m|})
+        let sign = if abs_m % 2 == 0 { 1.0 } else { -1.0 };
+        (sign * prefactor * m_phi.cos(), -sign * prefactor * m_phi.sin())
+    }
+}
+
 // Types
 
 pub struct PointWithTag<T> {
