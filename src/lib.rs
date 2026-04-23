@@ -366,6 +366,32 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     #[pyfn(m)]
+    fn compute_sann_quantities_2d<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        box_size: f64,
+        periodic: bool,
+    ) -> (Bound<'py, PyArray1<usize>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>) {
+        let array = unsafe { points.as_array() };
+        let (counts, nn_dists, shell_radii) = voronoi::compute_sann_quantities_2d(
+            &array, box_size, box_size, periodic);
+        (PyArray1::from_vec(py, counts), PyArray1::from_vec(py, nn_dists), PyArray1::from_vec(py, shell_radii))
+    }
+
+    #[pyfn(m)]
+    fn compute_sann_quantities_3d<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        box_size: f64,
+        periodic: bool,
+    ) -> (Bound<'py, PyArray1<usize>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>) {
+        let array = unsafe { points.as_array() };
+        let (counts, nn_dists, shell_radii) = voronoi::compute_sann_quantities_3d(
+            &array, box_size, box_size, box_size, periodic);
+        (PyArray1::from_vec(py, counts), PyArray1::from_vec(py, nn_dists), PyArray1::from_vec(py, shell_radii))
+    }
+
+    #[pyfn(m)]
     fn compute_2sphere_all_voronoi_quantities<'py>(
         py: Python<'py>,
         points: &Bound<'py, PyArrayDyn<f64>>,

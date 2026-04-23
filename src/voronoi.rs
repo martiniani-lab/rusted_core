@@ -897,12 +897,103 @@ pub fn compute_metric_boops_3d(
     ql_array
 }
 
-/// 2D Bond-Orientational Order Parameters using the SANN (Solid-Angle
-/// Nearest-Neighbor) algorithm for parameter-free neighbor determination.
-/// See van Meel et al., J. Chem. Phys. 136, 234107 (2012).
-///
-/// Neighbors are added in distance order until the SANN shell radius
-/// R(m) = Σr_j / (m-2) drops below the next neighbor distance.
+// --- SANN (Solid-Angle Nearest-Neighbor) helpers ---
+// See van Meel et al., J. Chem. Phys. 136, 234107 (2012).
+//
+// Neighbors are added in distance order until the SANN shell radius
+// R(m) = Σr_j / (m-2) drops below the distance to the next candidate.
+// The algorithm is parameter-free and works in any dimension.
+
+/// Result of SANN neighbor determination for a single particle.
+struct SannResult2D {
+    bond_vectors: Vec<[f64; 2]>,
+    distances: Vec<f64>,
+    shell_radius: f64,
+}
+
+struct SannResult3D {
+    bond_vectors: Vec<[f64; 3]>,
+    distances: Vec<f64>,
+    shell_radius: f64,
+}
+
+/// Run the SANN iteration for a 2D particle using an R*-tree iterator.
+fn sann_neighbors_2d(
+    rtree: &rstar::RTree<[f64; 2]>,
+    xi: f64, yi: f64,
+    box_lengths: &[f64],
+    periodic: bool,
+) -> SannResult2D {
+    let mut bond_vectors: Vec<[f64; 2]> = Vec::new();
+    let mut distances: Vec<f64> = Vec::new();
+    let mut dist_sum = 0.0;
+    let mut iter = rtree.nearest_neighbor_iter_with_distance_2(&[xi, yi]).skip(1);
+
+    loop {
+        let (neighbor, dist2) = iter.next().unwrap();
+        let dist = dist2.sqrt();
+        let m = distances.len() + 1;
+
+        if m > 3 {
+            let r_shell = dist_sum / (distances.len() as f64 - 2.0);
+            if r_shell <= dist {
+                let shell_radius = r_shell;
+                return SannResult2D { bond_vectors, distances, shell_radius };
+            }
+        }
+
+        dist_sum += dist;
+        distances.push(dist);
+
+        let mut r_ij = [neighbor[0] - xi, neighbor[1] - yi];
+        if periodic {
+            ensure_periodicity(&mut r_ij, box_lengths);
+        }
+        bond_vectors.push(r_ij);
+    }
+}
+
+/// Run the SANN iteration for a 3D particle using an R*-tree iterator.
+fn sann_neighbors_3d(
+    rtree: &rstar::RTree<[f64; 3]>,
+    xi: f64, yi: f64, zi: f64,
+    box_lengths: &[f64],
+    periodic: bool,
+) -> SannResult3D {
+    let mut bond_vectors: Vec<[f64; 3]> = Vec::new();
+    let mut distances: Vec<f64> = Vec::new();
+    let mut dist_sum = 0.0;
+    let mut iter = rtree.nearest_neighbor_iter_with_distance_2(
+        &[xi, yi, zi]).skip(1);
+
+    loop {
+        let (neighbor, dist2) = iter.next().unwrap();
+        let dist = dist2.sqrt();
+        let m = distances.len() + 1;
+
+        if m > 3 {
+            let r_shell = dist_sum / (distances.len() as f64 - 2.0);
+            if r_shell <= dist {
+                let shell_radius = r_shell;
+                return SannResult3D { bond_vectors, distances, shell_radius };
+            }
+        }
+
+        dist_sum += dist;
+        distances.push(dist);
+
+        let mut r_ij = [neighbor[0] - xi, neighbor[1] - yi, neighbor[2] - zi];
+        if periodic {
+            ensure_periodicity(&mut r_ij, box_lengths);
+        }
+        bond_vectors.push(r_ij);
+    }
+}
+
+// --- SANN BOOPs ---
+
+/// 2D Bond-Orientational Order Parameters using the SANN algorithm
+/// for parameter-free neighbor determination.
 ///
 /// Output shape: (N, n_orders, 2) — complex ψ_n per particle.
 pub fn compute_sann_boops_2d(
@@ -925,52 +1016,22 @@ pub fn compute_sann_boops_2d(
         .into_par_iter()
         .enumerate()
         .for_each(|(i, mut boops_i)| {
-            let xi = points_array[[i, 0]];
-            let yi = points_array[[i, 1]];
+            let sann = sann_neighbors_2d(&rtree,
+                points_array[[i, 0]], points_array[[i, 1]], &box_lengths, periodic);
+            let n_nb = sann.bond_vectors.len();
+            if n_nb == 0 { return; }
 
-            // Collect neighbors and bond vectors via SANN criterion
-            let mut bond_angles: Vec<f64> = Vec::new();
-            let mut dist_sum = 0.0;
-            let mut iter = rtree.nearest_neighbor_iter_with_distance_2(&[xi, yi]).skip(1);
-
-            // m counts accepted neighbors (1-indexed in the paper, 0-indexed in our Vec)
-            loop {
-                let (neighbor, dist2) = iter.next().unwrap();
-                let dist = dist2.sqrt();
-                let m = bond_angles.len() + 1; // count after adding this one
-
-                // SANN: must accept at least 3 neighbors
-                if m > 3 {
-                    let r_shell = dist_sum / (bond_angles.len() as f64 - 2.0);
-                    if r_shell <= dist {
-                        break; // converged
-                    }
-                }
-
-                dist_sum += dist;
-
-                let mut r_ij = [neighbor[0] - xi, neighbor[1] - yi];
-                if periodic {
-                    ensure_periodicity(&mut r_ij, &box_lengths);
-                }
-                bond_angles.push(atan2(r_ij[1], r_ij[0]).in_radians());
-            }
-
-            let n_nb = bond_angles.len();
-            for theta in &bond_angles {
+            for r_ij in &sann.bond_vectors {
+                let theta = atan2(r_ij[1], r_ij[0]).in_radians();
                 for n in 0..boop_orders_number {
-                    let order = boop_order_array[[n]] as f64;
-                    let angle = order * theta;
+                    let angle = boop_order_array[[n]] as f64 * theta;
                     boops_i[[n, 0]] += angle.cos();
                     boops_i[[n, 1]] += angle.sin();
                 }
             }
-
-            if n_nb > 0 {
-                for n in 0..boop_orders_number {
-                    boops_i[[n, 0]] /= n_nb as f64;
-                    boops_i[[n, 1]] /= n_nb as f64;
-                }
+            for n in 0..boop_orders_number {
+                boops_i[[n, 0]] /= n_nb as f64;
+                boops_i[[n, 1]] /= n_nb as f64;
             }
         });
 
@@ -978,7 +1039,7 @@ pub fn compute_sann_boops_2d(
 }
 
 /// 3D Steinhardt BOOPs using the SANN algorithm for parameter-free
-/// neighbor determination. See van Meel et al., J. Chem. Phys. 136, 234107 (2012).
+/// neighbor determination.
 ///
 /// Output shape: (N, n_orders) — scalar q_l per particle.
 pub fn compute_sann_boops_3d(
@@ -1003,38 +1064,10 @@ pub fn compute_sann_boops_3d(
         .into_par_iter()
         .enumerate()
         .for_each(|(i, mut ql_i)| {
-            let xi = points_array[[i, 0]];
-            let yi = points_array[[i, 1]];
-            let zi = points_array[[i, 2]];
-
-            // Collect neighbor bond vectors via SANN criterion
-            let mut neighbors: Vec<[f64; 3]> = Vec::new();
-            let mut dist_sum = 0.0;
-            let mut iter = rtree.nearest_neighbor_iter_with_distance_2(
-                &[xi, yi, zi]).skip(1);
-
-            loop {
-                let (neighbor, dist2) = iter.next().unwrap();
-                let dist = dist2.sqrt();
-                let m = neighbors.len() + 1;
-
-                if m > 3 {
-                    let r_shell = dist_sum / (neighbors.len() as f64 - 2.0);
-                    if r_shell <= dist {
-                        break;
-                    }
-                }
-
-                dist_sum += dist;
-
-                let mut r_ij = [neighbor[0] - xi, neighbor[1] - yi, neighbor[2] - zi];
-                if periodic {
-                    ensure_periodicity(&mut r_ij, &box_lengths);
-                }
-                neighbors.push(r_ij);
-            }
-
-            let n_nb = neighbors.len();
+            let sann = sann_neighbors_3d(&rtree,
+                points_array[[i, 0]], points_array[[i, 1]], points_array[[i, 2]],
+                &box_lengths, periodic);
+            let n_nb = sann.bond_vectors.len();
             if n_nb == 0 { return; }
 
             for (n_ord, &order) in boop_order_array.iter().enumerate() {
@@ -1045,7 +1078,7 @@ pub fn compute_sann_boops_3d(
                     let mut re = 0.0;
                     let mut im = 0.0;
 
-                    for r_ij in &neighbors {
+                    for r_ij in &sann.bond_vectors {
                         let dist = (r_ij[0]*r_ij[0] + r_ij[1]*r_ij[1]
                                   + r_ij[2]*r_ij[2]).sqrt();
                         let cos_theta = r_ij[2] / dist;
@@ -1066,4 +1099,73 @@ pub fn compute_sann_boops_3d(
         });
 
     ql_array
+}
+
+// --- SANN quantities ---
+
+/// SANN neighborhood quantities in 2D, analogous to Voronoi quantities.
+/// Returns (neighbour_counts, nn_distances, shell_radii).
+pub fn compute_sann_quantities_2d(
+    points_array: &ArrayViewD<'_, f64>,
+    box_size_x: f64,
+    box_size_y: f64,
+    periodic: bool,
+) -> (Vec<usize>, Vec<f64>, Vec<f64>) {
+    let n_particles = points_array.shape()[0];
+    let box_lengths = [box_size_x, box_size_y];
+
+    let mut neighbour_counts = vec![0usize; n_particles];
+    let mut nn_distances = vec![0.0f64; n_particles];
+    let mut shell_radii = vec![0.0f64; n_particles];
+
+    let rtree = compute_periodic_rstar_tree(points_array, box_size_x, box_size_y, periodic);
+
+    neighbour_counts.par_iter_mut()
+        .zip(nn_distances.par_iter_mut())
+        .zip(shell_radii.par_iter_mut())
+        .enumerate()
+        .for_each(|(i, ((count_i, nnd_i), radius_i))| {
+            let sann = sann_neighbors_2d(&rtree,
+                points_array[[i, 0]], points_array[[i, 1]], &box_lengths, periodic);
+            *count_i = sann.distances.len();
+            *nnd_i = sann.distances.first().copied().unwrap_or(0.0);
+            *radius_i = sann.shell_radius;
+        });
+
+    (neighbour_counts, nn_distances, shell_radii)
+}
+
+/// SANN neighborhood quantities in 3D, analogous to Voronoi quantities.
+/// Returns (neighbour_counts, nn_distances, shell_radii).
+pub fn compute_sann_quantities_3d(
+    points_array: &ArrayViewD<'_, f64>,
+    box_size_x: f64,
+    box_size_y: f64,
+    box_size_z: f64,
+    periodic: bool,
+) -> (Vec<usize>, Vec<f64>, Vec<f64>) {
+    let n_particles = points_array.shape()[0];
+    let box_lengths = [box_size_x, box_size_y, box_size_z];
+
+    let mut neighbour_counts = vec![0usize; n_particles];
+    let mut nn_distances = vec![0.0f64; n_particles];
+    let mut shell_radii = vec![0.0f64; n_particles];
+
+    let rtree = compute_periodic_rstar_tree_3d(
+        points_array, box_size_x, box_size_y, box_size_z, periodic);
+
+    neighbour_counts.par_iter_mut()
+        .zip(nn_distances.par_iter_mut())
+        .zip(shell_radii.par_iter_mut())
+        .enumerate()
+        .for_each(|(i, ((count_i, nnd_i), radius_i))| {
+            let sann = sann_neighbors_3d(&rtree,
+                points_array[[i, 0]], points_array[[i, 1]], points_array[[i, 2]],
+                &box_lengths, periodic);
+            *count_i = sann.distances.len();
+            *nnd_i = sann.distances.first().copied().unwrap_or(0.0);
+            *radius_i = sann.shell_radius;
+        });
+
+    (neighbour_counts, nn_distances, shell_radii)
 }
