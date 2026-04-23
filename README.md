@@ -25,7 +25,7 @@ This is very much a WIP but the code already supports
 - Voronoi quantities (nearest neighbor distance, Voronoi cell area, Voronoi number of neighbors) and option to compute quantities averaged over Voronoi neighbors in 2d and on spheres
 - Cluster tagging according to metric distance between particles
 - Neighbor counts using metric cut-off, including for polydisperse systems
-- Metric-distance-cutoff versions of Steinhardt's BOOPs in 2d and 3d that bypass the Delaunay construction
+- Metric-distance-cutoff and SANN versions of Steinhardt's BOOPs in 2d and 3d that bypass the Delaunay construction
 
 ### TODO
 - Wait for a good implementation of 3d Delaunay in pure rust to implement clean Steinhardt's 3d BOOPs
