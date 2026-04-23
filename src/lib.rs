@@ -336,6 +336,36 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     #[pyfn(m)]
+    fn compute_sann_boops_2d<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        orders: &Bound<'py, PyArrayDyn<isize>>,
+        box_size: f64,
+        periodic: bool,
+    ) -> Bound<'py, PyArray<f64, Dim<[usize; 3]>>> {
+        let array = unsafe { points.as_array() };
+        let boop_order_array = unsafe { orders.as_array() };
+        let boops = voronoi::compute_sann_boops_2d(
+            &array, &boop_order_array, box_size, box_size, periodic);
+        PyArray::from_array(py, &boops)
+    }
+
+    #[pyfn(m)]
+    fn compute_sann_boops_3d<'py>(
+        py: Python<'py>,
+        points: &Bound<'py, PyArrayDyn<f64>>,
+        orders: &Bound<'py, PyArrayDyn<isize>>,
+        box_size: f64,
+        periodic: bool,
+    ) -> Bound<'py, PyArray<f64, Dim<[usize; 2]>>> {
+        let array = unsafe { points.as_array() };
+        let boop_order_array = unsafe { orders.as_array() };
+        let boops = voronoi::compute_sann_boops_3d(
+            &array, &boop_order_array, box_size, box_size, box_size, periodic);
+        PyArray::from_array(py, &boops)
+    }
+
+    #[pyfn(m)]
     fn compute_2sphere_all_voronoi_quantities<'py>(
         py: Python<'py>,
         points: &Bound<'py, PyArrayDyn<f64>>,

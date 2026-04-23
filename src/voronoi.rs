@@ -896,3 +896,174 @@ pub fn compute_metric_boops_3d(
 
     ql_array
 }
+
+/// 2D Bond-Orientational Order Parameters using the SANN (Solid-Angle
+/// Nearest-Neighbor) algorithm for parameter-free neighbor determination.
+/// See van Meel et al., J. Chem. Phys. 136, 234107 (2012).
+///
+/// Neighbors are added in distance order until the SANN shell radius
+/// R(m) = Σr_j / (m-2) drops below the next neighbor distance.
+///
+/// Output shape: (N, n_orders, 2) — complex ψ_n per particle.
+pub fn compute_sann_boops_2d(
+    points_array: &ArrayViewD<'_, f64>,
+    boop_order_array: &ArrayViewD<'_, isize>,
+    box_size_x: f64,
+    box_size_y: f64,
+    periodic: bool,
+) -> Array<f64, Dim<[usize; 3]>> {
+    let n_particles = points_array.shape()[0];
+    let boop_orders_number = boop_order_array.shape()[0];
+    let box_lengths = [box_size_x, box_size_y];
+
+    let mut boop_vectors = Array::<f64, _>::zeros((n_particles, boop_orders_number, 2).f());
+
+    let rtree = compute_periodic_rstar_tree(points_array, box_size_x, box_size_y, periodic);
+
+    boop_vectors
+        .axis_iter_mut(Axis(0))
+        .into_par_iter()
+        .enumerate()
+        .for_each(|(i, mut boops_i)| {
+            let xi = points_array[[i, 0]];
+            let yi = points_array[[i, 1]];
+
+            // Collect neighbors and bond vectors via SANN criterion
+            let mut bond_angles: Vec<f64> = Vec::new();
+            let mut dist_sum = 0.0;
+            let mut iter = rtree.nearest_neighbor_iter_with_distance_2(&[xi, yi]).skip(1);
+
+            // m counts accepted neighbors (1-indexed in the paper, 0-indexed in our Vec)
+            loop {
+                let (neighbor, dist2) = iter.next().unwrap();
+                let dist = dist2.sqrt();
+                let m = bond_angles.len() + 1; // count after adding this one
+
+                // SANN: must accept at least 3 neighbors
+                if m > 3 {
+                    let r_shell = dist_sum / (bond_angles.len() as f64 - 2.0);
+                    if r_shell <= dist {
+                        break; // converged
+                    }
+                }
+
+                dist_sum += dist;
+
+                let mut r_ij = [neighbor[0] - xi, neighbor[1] - yi];
+                if periodic {
+                    ensure_periodicity(&mut r_ij, &box_lengths);
+                }
+                bond_angles.push(atan2(r_ij[1], r_ij[0]).in_radians());
+            }
+
+            let n_nb = bond_angles.len();
+            for theta in &bond_angles {
+                for n in 0..boop_orders_number {
+                    let order = boop_order_array[[n]] as f64;
+                    let angle = order * theta;
+                    boops_i[[n, 0]] += angle.cos();
+                    boops_i[[n, 1]] += angle.sin();
+                }
+            }
+
+            if n_nb > 0 {
+                for n in 0..boop_orders_number {
+                    boops_i[[n, 0]] /= n_nb as f64;
+                    boops_i[[n, 1]] /= n_nb as f64;
+                }
+            }
+        });
+
+    boop_vectors
+}
+
+/// 3D Steinhardt BOOPs using the SANN algorithm for parameter-free
+/// neighbor determination. See van Meel et al., J. Chem. Phys. 136, 234107 (2012).
+///
+/// Output shape: (N, n_orders) — scalar q_l per particle.
+pub fn compute_sann_boops_3d(
+    points_array: &ArrayViewD<'_, f64>,
+    boop_order_array: &ArrayViewD<'_, isize>,
+    box_size_x: f64,
+    box_size_y: f64,
+    box_size_z: f64,
+    periodic: bool,
+) -> Array<f64, Dim<[usize; 2]>> {
+    let n_particles = points_array.shape()[0];
+    let n_orders = boop_order_array.shape()[0];
+    let box_lengths = [box_size_x, box_size_y, box_size_z];
+
+    let mut ql_array = Array::<f64, _>::zeros((n_particles, n_orders).f());
+
+    let rtree = compute_periodic_rstar_tree_3d(
+        points_array, box_size_x, box_size_y, box_size_z, periodic);
+
+    ql_array
+        .axis_iter_mut(Axis(0))
+        .into_par_iter()
+        .enumerate()
+        .for_each(|(i, mut ql_i)| {
+            let xi = points_array[[i, 0]];
+            let yi = points_array[[i, 1]];
+            let zi = points_array[[i, 2]];
+
+            // Collect neighbor bond vectors via SANN criterion
+            let mut neighbors: Vec<[f64; 3]> = Vec::new();
+            let mut dist_sum = 0.0;
+            let mut iter = rtree.nearest_neighbor_iter_with_distance_2(
+                &[xi, yi, zi]).skip(1);
+
+            loop {
+                let (neighbor, dist2) = iter.next().unwrap();
+                let dist = dist2.sqrt();
+                let m = neighbors.len() + 1;
+
+                if m > 3 {
+                    let r_shell = dist_sum / (neighbors.len() as f64 - 2.0);
+                    if r_shell <= dist {
+                        break;
+                    }
+                }
+
+                dist_sum += dist;
+
+                let mut r_ij = [neighbor[0] - xi, neighbor[1] - yi, neighbor[2] - zi];
+                if periodic {
+                    ensure_periodicity(&mut r_ij, &box_lengths);
+                }
+                neighbors.push(r_ij);
+            }
+
+            let n_nb = neighbors.len();
+            if n_nb == 0 { return; }
+
+            for (n_ord, &order) in boop_order_array.iter().enumerate() {
+                let l = order as usize;
+                let mut ql_sum = 0.0;
+
+                for m in -(l as isize)..=(l as isize) {
+                    let mut re = 0.0;
+                    let mut im = 0.0;
+
+                    for r_ij in &neighbors {
+                        let dist = (r_ij[0]*r_ij[0] + r_ij[1]*r_ij[1]
+                                  + r_ij[2]*r_ij[2]).sqrt();
+                        let cos_theta = r_ij[2] / dist;
+                        let phi = r_ij[1].atan2(r_ij[0]);
+
+                        let (ylm_re, ylm_im) = spherical_harmonic(l, m, cos_theta, phi);
+                        re += ylm_re;
+                        im += ylm_im;
+                    }
+
+                    re /= n_nb as f64;
+                    im /= n_nb as f64;
+                    ql_sum += re * re + im * im;
+                }
+
+                ql_i[n_ord] = (4.0 * PI / (2 * l + 1) as f64 * ql_sum).sqrt();
+            }
+        });
+
+    ql_array
+}
