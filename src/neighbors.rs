@@ -316,6 +316,68 @@ pub fn point_variances(points: &ArrayViewD<'_, f64>, radii: &ArrayView1<'_, f64>
     return reduced_variances;
 }
 
+
+pub fn point_skewnesses(points: &ArrayViewD<'_, f64>, radii: &ArrayView1<'_, f64>, box_lengths: &Vec<f64>, n_samples: usize, periodic: bool) -> (Vec<f64>,Vec<f64>) {
+
+    let n_radii = radii.shape()[0];
+    let means  = atomic_vec(n_radii);
+    let means2 = atomic_vec(n_radii);
+    let means3 = atomic_vec(n_radii);
+
+    let npoints = points.shape()[0];
+    let ndim = points.shape()[1];
+
+    assert!(npoints > 1);
+    assert!(ndim < 4);
+    assert!(box_lengths.len() == ndim);
+
+    if ndim == 2 {
+        let rtree_positions = compute_periodic_rstar_tree(&points, box_lengths[0], box_lengths[1], periodic);
+
+        radii.to_vec().into_iter().enumerate().for_each(|(current_index,radius)| {
+            (0..n_samples).into_par_iter().for_each( |_sample| {
+                let mut rng = rand::rng();
+                let x_center: f64 = rng.random();
+                let y_center: f64 = rng.random();
+                let count = count_points_in_disk(&rtree_positions, [x_center, y_center], radius);
+                atomic_add(&means[current_index], count as f64);
+                atomic_add(&means2[current_index], (count*count) as f64);
+                atomic_add(&means3[current_index], (count*count*count) as f64);
+            });
+        });
+
+    } else {
+        let rtree_positions = compute_periodic_rstar_tree_3d(&points, box_lengths[0], box_lengths[1], box_lengths[2], periodic);
+
+        radii.to_vec().into_iter().enumerate().for_each(|(current_index,radius)| {
+            (0..n_samples).into_par_iter().for_each( |_sample| {
+                let mut rng = rand::rng();
+                let x_center: f64 = rng.random();
+                let y_center: f64 = rng.random();
+                let z_center: f64 = rng.random();
+                let count = count_points_in_ball(&rtree_positions, [x_center, y_center, z_center], radius);
+                atomic_add(&means[current_index], count as f64);
+                atomic_add(&means2[current_index], (count*count) as f64);
+                atomic_add(&means3[current_index], (count*count*count) as f64);
+            });
+        });
+    }
+
+    let mut reduced_variances = Vec::new();
+    let mut reduced_skewnesses = Vec::new();
+    for index in 0..n_radii {
+        let current_mean = atomic_read(&means[index]) / n_samples as f64;
+        let current_mean2 = atomic_read(&means2[index]) / n_samples as f64;
+        let current_mean3 = atomic_read(&means3[index]) / n_samples as f64;
+        let reduced_variance = current_mean2/ (current_mean*current_mean) - 1.0;
+        let reduced_skewness = current_mean3 / (current_mean * current_mean * current_mean) - 3.0 * current_mean2 / (current_mean*current_mean) + 2.0;
+        reduced_variances.push(reduced_variance);
+        reduced_skewnesses.push(reduced_skewness);
+    }
+
+    return (reduced_variances,reduced_skewnesses);
+}
+
 pub fn count_metric_neighbors(points: &ArrayViewD<'_, f64>, radii: &ArrayView1<'_, f64>, threshold: f64, box_lengths: &Vec<f64>, periodic: bool) -> Vec<usize> {
 
     let npoints = points.shape()[0];

@@ -581,6 +581,22 @@ fn rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         let reduced_variances = neighbors::point_variances(&array, &radii, &vec![box_size; ndim], n_samples, periodic);
         reduced_variances.into_pyarray(py)
     }
+    
+    #[pyfn(m)]
+    fn point_skewnessess<'py>(
+        py: Python<'py>,
+        x: Bound<'py, PyArrayDyn<f64>>,
+        radii: Bound<'py, PyArray1<f64>>,
+        box_size: f64,
+        n_samples: usize,
+        periodic: bool
+    ) -> (Bound<'py, PyArray1<f64>>,Bound<'py, PyArray1<f64>>) {
+        let array = unsafe { x.as_array() };
+        let radii = unsafe { radii.as_array() };
+        let ndim = array.shape()[1];
+        let (reduced_variances, reduced_skewnesses) = neighbors::point_skewnesses(&array, &radii, &vec![box_size; ndim], n_samples, periodic);
+        (reduced_variances.into_pyarray(py), reduced_skewnesses.into_pyarray(py))
+    }
 
     #[pyfn(m)]
     fn point_variances_2sphere<'py>(
